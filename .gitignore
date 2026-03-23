@@ -1,0 +1,48 @@
+## Visual Studio / .NET C# WPF 项目忽略规则
+
+# 编译输出
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.cache
+
+# Visual Studio IDE
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# NuGet 包（应通过 restore 获取，不提交到仓库）
+packages/
+*.nupkg
+.nuget/
+
+# 运行时日志（由 NLog 生成，不应提交）
+logs/
+
+# 测试覆盖率报告
+.coverage-report/
+TestResults/
+coverage.cobertura.xml
+
+# 配置快照（用户运行时数据，不提交）
+*.snapshot.json
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code 本地配置（含权限规则，不提交）
+.claude/settings.local.json
+
+# MCP 服务配置（可能含本地路径或密钥，不提交）
+.mcp.json
+
+# 保留项目技能和审查报告
+# .claude/skills/  ← 保留（skills 对团队有用）
+# .reviews/        ← 保留（审查报告有参考价值）
+# .test-reports/   ← 保留
