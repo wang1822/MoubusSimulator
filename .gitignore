@@ -39,8 +39,8 @@ desktop.ini
 # Claude Code 本地配置（含权限规则，不提交）
 .claude/settings.local.json
 
-# MCP 服务配置（可能含本地路径或密钥，不提交）
-.mcp.json
+# MCP 服务配置已加入版本控制（团队共享）
+# .mcp.json
 
 # 保留项目技能和审查报告
 # .claude/skills/  ← 保留（skills 对团队有用）

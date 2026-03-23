@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "word-document-server": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "office-word-mcp-server",
+        "word_mcp_server"
+      ]
+    },
+    "excel": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "--yes",
+        "@zhiweixu/excel-mcp-server"
+      ],
+      "env": {
+        "LOG_PATH": "E:\\woex",
+        "CACHE_MAX_AGE": "1",
+        "CACHE_CLEANUP_INTERVAL": "4",
+        "LOG_RETENTION_DAYS": "7",
+        "LOG_CLEANUP_INTERVAL": "24"
+      }
+    },
+      "playwright": {
+      "command": "npx",
+      "args": ["-y", "@executeautomation/playwright-mcp-server"]
+    }
+  }
+}
