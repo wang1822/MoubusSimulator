@@ -1,0 +1,243 @@
+<UserControl x:Class="SimulatorApp.Views.Panels.SlavePanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:SimulatorApp.Converters"
+             xmlns:dev="clr-namespace:SimulatorApp.Views.Panels.Devices">
+
+    <UserControl.Resources>
+        <conv:BoolToColorConverter x:Key="RunColorConv"
+            TrueColor="#22C55E" FalseColor="#64748B" />
+        <conv:BoolToVisibilityConverter x:Key="BoolVis" />
+        <conv:BoolToVisibilityConverter x:Key="InvBoolVis" Invert="True" />
+        <conv:BoolToStringConverter x:Key="BoolStr" />
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 顶部配置栏 -->
+        <Border Grid.Row="0" Background="#1C2033" BorderBrush="#2E3352"
+                BorderThickness="0,0,0,1" Padding="16,12">
+            <StackPanel>
+                <!-- 协议选择 -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBlock Text="协议：" Foreground="#94A3B8" FontSize="13"
+                               VerticalAlignment="Center" Width="60" />
+                    <RadioButton Content="TCP"
+                                 IsChecked="{Binding IsTcp}"
+                                 Foreground="#F1F5F9" Margin="0,0,16,0" />
+                    <RadioButton Content="RTU"
+                                 IsChecked="{Binding IsRtu}"
+                                 Foreground="#F1F5F9" />
+                </StackPanel>
+
+                <!-- TCP 参数：第一行 监听IP -->
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
+                            Visibility="{Binding IsTcp, Converter={StaticResource BoolVis}}">
+                    <TextBlock Text="监听IP：" Foreground="#94A3B8" Width="60"
+                               VerticalAlignment="Center" FontSize="13" />
+                    <ComboBox ItemsSource="{Binding AvailableAddresses}"
+                              SelectedValue="{Binding TcpBindAddress}"
+                              IsEditable="True"
+                              Text="{Binding TcpBindAddress, UpdateSourceTrigger=PropertyChanged}"
+                              Width="180" Height="28" />
+                </StackPanel>
+                <!-- TCP 参数：第二行 端口 + SlaveId -->
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
+                            Visibility="{Binding IsTcp, Converter={StaticResource BoolVis}}">
+                    <TextBlock Text="端口：" Foreground="#94A3B8" Width="60"
+                               VerticalAlignment="Center" FontSize="13" />
+                    <TextBox Text="{Binding TcpPort, UpdateSourceTrigger=PropertyChanged}"
+                             Width="80" Height="28" Margin="0,0,16,0" />
+                    <TextBlock Text="SlaveId：" Foreground="#94A3B8" Width="60"
+                               VerticalAlignment="Center" FontSize="13" />
+                    <TextBox Text="{Binding TcpSlaveId, UpdateSourceTrigger=PropertyChanged}"
+                             Width="80" Height="28" />
+                </StackPanel>
+
+                <!-- RTU 参数：第一行 串口 -->
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
+                            Visibility="{Binding IsRtu, Converter={StaticResource BoolVis}}">
+                    <TextBlock Text="串口：" Foreground="#94A3B8" Width="60"
+                               VerticalAlignment="Center" FontSize="13" />
+                    <ComboBox ItemsSource="{Binding AvailablePorts}"
+                              SelectedValue="{Binding ComPort}"
+                              Width="120" Height="28" Margin="0,0,6,0" />
+                    <Button Content="⟳" Command="{Binding RefreshPortsCommand}"
+                            Width="28" Height="28"
+                            Background="#374151" Foreground="#F1F5F9"
+                            BorderThickness="0" FontSize="14" Cursor="Hand"
+                            ToolTip="刷新串口列表">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" CornerRadius="4">
+                                    <TextBlock Text="{TemplateBinding Content}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Foreground="#F1F5F9" />
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </StackPanel>
+                <!-- RTU 参数：第二行 波特率 + SlaveId -->
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
+                            Visibility="{Binding IsRtu, Converter={StaticResource BoolVis}}">
+                    <TextBlock Text="波特率：" Foreground="#94A3B8" Width="60"
+                               VerticalAlignment="Center" FontSize="13" />
+                    <TextBox Text="{Binding BaudRate, UpdateSourceTrigger=PropertyChanged}"
+                             Width="80" Height="28" Margin="0,0,16,0" />
+                    <TextBlock Text="SlaveId：" Foreground="#94A3B8" Width="60"
+                               VerticalAlignment="Center" FontSize="13" />
+                    <TextBox Text="{Binding RtuSlaveId, UpdateSourceTrigger=PropertyChanged}"
+                             Width="80" Height="28" />
+                </StackPanel>
+
+                <!-- 启停按钮 + 状态 -->
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Content="{Binding IsRunning, Converter={StaticResource BoolStr},
+                                ConverterParameter='停止从站|启动从站'}"
+                            Command="{Binding ToggleCommand}"
+                            Width="100" Height="32"
+                            Background="#2563EB" Foreground="#F1F5F9"
+                            BorderThickness="0" FontSize="13" Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="#2563EB" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                        <Setter Property="Background" Value="#EF4444" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                        CornerRadius="6" Padding="8,0">
+                                    <ContentPresenter HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center" />
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <Ellipse Width="10" Height="10" Margin="12,0,6,0"
+                             VerticalAlignment="Center"
+                             Fill="{Binding IsRunning, Converter={StaticResource RunColorConv}}" />
+                    <TextBlock Text="{Binding StatusText}"
+                               Foreground="#94A3B8" FontSize="13"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- 设备列表（可折叠） -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="12,8">
+
+                <Expander IsExpanded="True"
+                          Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="PCS 储能变流器（7296）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:PcsPanel DataContext="{Binding Pcs}"/>
+                </Expander>
+
+                <Expander IsExpanded="True"
+                          Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="BMS 电池管理系统（23680）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:BmsPanel DataContext="{Binding Bms}"/>
+                </Expander>
+
+                <Expander Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="MPPT 光伏控制器（40064）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:MpptPanel DataContext="{Binding Mppt}"/>
+                </Expander>
+
+                <Expander Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="STS 转换开关·仪表（1408）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:StsInstrumentPanel DataContext="{Binding StsInstrument}"/>
+                </Expander>
+
+                <Expander Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="STS 控制IO卡（1920）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:StsControlPanel DataContext="{Binding StsControl}"/>
+                </Expander>
+
+                <Expander Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="空调（52352）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:AirConditionerPanel DataContext="{Binding AirConditioner}"/>
+                </Expander>
+
+                <Expander Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="除湿机（53248）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:DehumidifierPanel DataContext="{Binding Dehumidifier}"/>
+                </Expander>
+
+                <Expander Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="柴油发电机（53504）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:DieselGeneratorPanel DataContext="{Binding DieselGenerator}"/>
+                </Expander>
+
+                <Expander Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="气体检测仪（53760）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:GasDetectorPanel DataContext="{Binding GasDetector}"/>
+                </Expander>
+
+                <Expander Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="外部电表（384）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:ExternalMeterPanel DataContext="{Binding ExternalMeter}"/>
+                </Expander>
+
+                <Expander Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="储能电表（48256）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:StorageMeterPanel DataContext="{Binding StorageMeter}"/>
+                </Expander>
+
+                <Expander Background="#1C2033" BorderBrush="#2E3352"
+                          BorderThickness="1" Margin="0,3" Padding="8,4">
+                    <Expander.Header>
+                        <TextBlock Text="DI/DO 动环控制器（60544）" Foreground="#F1F5F9" FontSize="13" FontWeight="SemiBold"/>
+                    </Expander.Header>
+                    <dev:DIDOControllerPanel DataContext="{Binding DIDOController}"/>
+                </Expander>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

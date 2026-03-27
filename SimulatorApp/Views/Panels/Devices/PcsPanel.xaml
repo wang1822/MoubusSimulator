@@ -1,0 +1,198 @@
+<UserControl x:Class="SimulatorApp.Views.Panels.Devices.PcsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="Sec" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#64748B"/>
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,10,0,4"/>
+        </Style>
+        <Style x:Key="FL" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#94A3B8"/>
+            <Setter Property="FontSize"   Value="12"/>
+            <Setter Property="Width"      Value="110"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="FB" TargetType="TextBox">
+            <Setter Property="Width"      Value="85"/>
+            <Setter Property="Height"     Value="26"/>
+            <Setter Property="Background" Value="#242840"/>
+            <Setter Property="Foreground" Value="#F1F5F9"/>
+            <Setter Property="BorderBrush" Value="#2E3352"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"    Value="6,2"/>
+            <Setter Property="FontSize"   Value="13"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin"     Value="4,0"/>
+        </Style>
+        <Style x:Key="FU" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#64748B"/>
+            <Setter Property="FontSize"   Value="12"/>
+            <Setter Property="Width"      Value="36"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"     Value="0,0,10,0"/>
+        </Style>
+        <Style x:Key="FC" TargetType="ComboBox">
+            <Setter Property="Width"      Value="120"/>
+            <Setter Property="Height"     Value="26"/>
+            <Setter Property="Background" Value="#242840"/>
+            <Setter Property="Foreground" Value="#F1F5F9"/>
+            <Setter Property="BorderBrush" Value="#2E3352"/>
+            <Setter Property="FontSize"   Value="12"/>
+            <Setter Property="Margin"     Value="4,0,12,0"/>
+        </Style>
+        <DataTemplate x:Key="AlarmTpl">
+            <CheckBox Content="{Binding Label}"
+                      IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                      Foreground="#CBD5E1" FontSize="12" Margin="0,2,14,2"/>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <StackPanel Margin="4,0,4,8">
+
+        <!-- ══ 遥测数值 ══ -->
+        <TextBlock Text="─── 遥测数值" Style="{StaticResource Sec}"/>
+        <WrapPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="直流电压" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding DcVoltage, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="V"       Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="直流电流" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding DcCurrent, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="A"       Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="直流功率" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding DcPower, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="kW"      Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="A相电压" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding PhaseAVolt, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="V"       Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="B相电压" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding PhaseBVolt, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="V"       Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="C相电压" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding PhaseCVolt, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="V"       Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="A相电流" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding GridPhaseACurr, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="A"       Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="有功功率" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding TotalActPower, StringFormat={}{0:F2}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="kW"      Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="无功功率" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding TotalReactPower, StringFormat={}{0:F2}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="kVar"    Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="频率"    Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding GridFrequency, StringFormat={}{0:F2}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="Hz"      Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="内部温度" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding Temp1, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="℃"      Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="今日充电" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding DailyCharged, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="kWh"     Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="今日放电" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding DailyDischarged, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="kWh"     Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="累计充电" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding CumCharged, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="kWh"     Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="累计放电" Style="{StaticResource FL}"/>
+                <TextBox   Text="{Binding CumDischarged, StringFormat={}{0:F1}, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource FB}"/>
+                <TextBlock Text="kWh"     Style="{StaticResource FU}"/>
+            </StackPanel>
+        </WrapPanel>
+
+        <!-- ══ 运行状态 ══ -->
+        <TextBlock Text="─── 运行状态" Style="{StaticResource Sec}"/>
+        <WrapPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="运行状态"   Style="{StaticResource FL}"/>
+                <ComboBox SelectedIndex="{Binding OperatingState, Mode=TwoWay}" Style="{StaticResource FC}">
+                    <ComboBoxItem Content="待机"/>
+                    <ComboBoxItem Content="自检"/>
+                    <ComboBoxItem Content="运行"/>
+                    <ComboBoxItem Content="告警"/>
+                    <ComboBoxItem Content="故障"/>
+                </ComboBox>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="充放电状态" Style="{StaticResource FL}"/>
+                <ComboBox SelectedIndex="{Binding ChargingState, Mode=TwoWay}" Style="{StaticResource FC}">
+                    <ComboBoxItem Content="静置"/>
+                    <ComboBoxItem Content="充电"/>
+                    <ComboBoxItem Content="放电"/>
+                </ComboBox>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="工作模式"   Style="{StaticResource FL}"/>
+                <ComboBox SelectedIndex="{Binding OperatingMode, Mode=TwoWay}" Style="{StaticResource FC}">
+                    <ComboBoxItem Content="并网"/>
+                    <ComboBoxItem Content="离网"/>
+                    <ComboBoxItem Content="切换中"/>
+                </ComboBox>
+            </StackPanel>
+        </WrapPanel>
+
+        <!-- ══ 故障/告警注入 ══ -->
+        <TextBlock Text="─── 故障/告警注入" Style="{StaticResource Sec}"/>
+
+        <TextBlock Text="故障字1：" Foreground="#EF4444" FontSize="12" Margin="0,4,0,2"/>
+        <ItemsControl ItemsSource="{Binding Fault1Items}" ItemTemplate="{StaticResource AlarmTpl}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+        </ItemsControl>
+
+        <TextBlock Text="告警字1：" Foreground="#F97316" FontSize="12" Margin="0,6,0,2"/>
+        <ItemsControl ItemsSource="{Binding Alarm1Items}" ItemTemplate="{StaticResource AlarmTpl}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+        </ItemsControl>
+
+        <Button Content="一键清除所有故障/告警"
+                Command="{Binding ClearAllFaultsCommand}"
+                Height="28" Padding="12,0" Margin="0,10,0,0"
+                HorizontalAlignment="Left"
+                Background="#374151" Foreground="#F1F5F9"
+                BorderThickness="0" FontSize="12" Cursor="Hand">
+            <Button.Template>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="4"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Button.Template>
+        </Button>
+    </StackPanel>
+</UserControl>

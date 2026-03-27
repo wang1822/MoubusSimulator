@@ -1,0 +1,177 @@
+<UserControl x:Class="SimulatorApp.Views.Panels.Devices.DieselGeneratorPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="Sec" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#64748B"/>
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,10,0,4"/>
+        </Style>
+        <Style x:Key="FL" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#94A3B8"/>
+            <Setter Property="FontSize"   Value="12"/>
+            <Setter Property="Width"      Value="110"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="FB" TargetType="TextBox">
+            <Setter Property="Width"      Value="85"/>
+            <Setter Property="Height"     Value="26"/>
+            <Setter Property="Background" Value="#242840"/>
+            <Setter Property="Foreground" Value="#F1F5F9"/>
+            <Setter Property="BorderBrush" Value="#2E3352"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"    Value="6,2"/>
+            <Setter Property="FontSize"   Value="13"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin"     Value="4,0"/>
+        </Style>
+        <Style x:Key="FU" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#64748B"/>
+            <Setter Property="FontSize"   Value="12"/>
+            <Setter Property="Width"      Value="36"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"     Value="0,0,10,0"/>
+        </Style>
+        <Style x:Key="FC" TargetType="ComboBox">
+            <Setter Property="Width"      Value="120"/>
+            <Setter Property="Height"     Value="26"/>
+            <Setter Property="Background" Value="#242840"/>
+            <Setter Property="Foreground" Value="#F1F5F9"/>
+            <Setter Property="BorderBrush" Value="#2E3352"/>
+            <Setter Property="FontSize"   Value="12"/>
+            <Setter Property="Margin"     Value="4,0,12,0"/>
+        </Style>
+        <Style x:Key="CK" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#CBD5E1"/>
+            <Setter Property="FontSize"   Value="12"/>
+            <Setter Property="Margin"     Value="0,2,14,2"/>
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel Margin="4,0,4,8">
+
+        <!-- ══ 遥测数值 ══ -->
+        <TextBlock Text="─── 遥测数值" Style="{StaticResource Sec}"/>
+        <WrapPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="输出电压A"    Style="{StaticResource FL}"/>
+                <TextBox   Text="220.0"       Style="{StaticResource FB}"/>
+                <TextBlock Text="V"           Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="输出电压B"    Style="{StaticResource FL}"/>
+                <TextBox   Text="220.0"       Style="{StaticResource FB}"/>
+                <TextBlock Text="V"           Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="输出电压C"    Style="{StaticResource FL}"/>
+                <TextBox   Text="220.0"       Style="{StaticResource FB}"/>
+                <TextBlock Text="V"           Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="输出电流A"    Style="{StaticResource FL}"/>
+                <TextBox   Text="0.0"         Style="{StaticResource FB}"/>
+                <TextBlock Text="A"           Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="有功功率"     Style="{StaticResource FL}"/>
+                <TextBox   Text="0.0"         Style="{StaticResource FB}"/>
+                <TextBlock Text="kW"          Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="频率"         Style="{StaticResource FL}"/>
+                <TextBox   Text="50.0"        Style="{StaticResource FB}"/>
+                <TextBlock Text="Hz"          Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="转速"         Style="{StaticResource FL}"/>
+                <TextBox   Text="1500"        Style="{StaticResource FB}"/>
+                <TextBlock Text="rpm"         Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="油位"         Style="{StaticResource FL}"/>
+                <TextBox   Text="80.0"        Style="{StaticResource FB}"/>
+                <TextBlock Text="%"           Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="冷却水温"     Style="{StaticResource FL}"/>
+                <TextBox   Text="60.0"        Style="{StaticResource FB}"/>
+                <TextBlock Text="℃"          Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="机油压力"     Style="{StaticResource FL}"/>
+                <TextBox   Text="350.0"       Style="{StaticResource FB}"/>
+                <TextBlock Text="kPa"         Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="累计发电量"   Style="{StaticResource FL}"/>
+                <TextBox   Text="0.0"         Style="{StaticResource FB}"/>
+                <TextBlock Text="kWh"         Style="{StaticResource FU}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="累计运行时长" Style="{StaticResource FL}"/>
+                <TextBox   Text="0"           Style="{StaticResource FB}"/>
+                <TextBlock Text="h"           Style="{StaticResource FU}"/>
+            </StackPanel>
+        </WrapPanel>
+
+        <!-- ══ 运行状态 ══ -->
+        <TextBlock Text="─── 运行状态" Style="{StaticResource Sec}"/>
+        <WrapPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="运行状态"     Style="{StaticResource FL}"/>
+                <ComboBox Style="{StaticResource FC}" SelectedIndex="0">
+                    <ComboBoxItem Content="停机"/>
+                    <ComboBoxItem Content="启动中"/>
+                    <ComboBoxItem Content="运行"/>
+                    <ComboBoxItem Content="冷却停机"/>
+                    <ComboBoxItem Content="故障"/>
+                </ComboBox>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2">
+                <TextBlock Text="启动方式"     Style="{StaticResource FL}"/>
+                <ComboBox Style="{StaticResource FC}" SelectedIndex="0">
+                    <ComboBoxItem Content="手动"/>
+                    <ComboBoxItem Content="自动"/>
+                </ComboBox>
+            </StackPanel>
+        </WrapPanel>
+
+        <!-- ══ 故障/告警注入 ══ -->
+        <TextBlock Text="─── 故障/告警注入" Style="{StaticResource Sec}"/>
+
+        <TextBlock Text="故障字1：" Foreground="#EF4444" FontSize="12" Margin="0,4,0,2"/>
+        <WrapPanel>
+            <CheckBox Content="超速故障"     Style="{StaticResource CK}"/>
+            <CheckBox Content="低油压故障"   Style="{StaticResource CK}"/>
+            <CheckBox Content="高水温故障"   Style="{StaticResource CK}"/>
+            <CheckBox Content="启动失败"     Style="{StaticResource CK}"/>
+            <CheckBox Content="过载保护"     Style="{StaticResource CK}"/>
+            <CheckBox Content="通信故障"     Style="{StaticResource CK}"/>
+        </WrapPanel>
+
+        <TextBlock Text="告警字1：" Foreground="#F97316" FontSize="12" Margin="0,6,0,2"/>
+        <WrapPanel>
+            <CheckBox Content="低油位告警"   Style="{StaticResource CK}"/>
+            <CheckBox Content="高水温告警"   Style="{StaticResource CK}"/>
+            <CheckBox Content="电池亏电告警" Style="{StaticResource CK}"/>
+            <CheckBox Content="维护到期告警" Style="{StaticResource CK}"/>
+        </WrapPanel>
+
+        <Button Content="一键清除所有故障/告警"
+                Height="28" Padding="12,0" Margin="0,10,0,0"
+                HorizontalAlignment="Left"
+                Background="#374151" Foreground="#F1F5F9"
+                BorderThickness="0" FontSize="12" Cursor="Hand">
+            <Button.Template>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="4"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Button.Template>
+        </Button>
+    </StackPanel>
+</UserControl>

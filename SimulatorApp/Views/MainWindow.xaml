@@ -1,0 +1,136 @@
+<Window x:Class="SimulatorApp.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:panels="clr-namespace:SimulatorApp.Views.Panels"
+        xmlns:conv="clr-namespace:SimulatorApp.Converters"
+        Title="EMS 设备故障模拟器"
+        Width="1280" Height="800"
+        MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#0F1117">
+
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolVis" />
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48" />   <!-- 标题栏 / 模式切换 -->
+            <RowDefinition Height="*" />    <!-- 主内容 -->
+            <RowDefinition Height="160" />  <!-- 日志面板 -->
+        </Grid.RowDefinitions>
+
+        <!-- ===== 顶部导航栏 ===== -->
+        <Border Grid.Row="0" Background="#1C2033" BorderBrush="#2E3352" BorderThickness="0,0,0,1">
+            <DockPanel Margin="16,0">
+
+                <!-- Logo 区 -->
+                <TextBlock DockPanel.Dock="Left"
+                           Text="EMS 模拟器"
+                           Foreground="#F1F5F9" FontSize="16" FontWeight="Bold"
+                           VerticalAlignment="Center" Margin="0,0,32,0" />
+
+                <!-- 模式切换 Tab -->
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                    <Button Content="从站模式"
+                            Command="{Binding SwitchToSlaveCommand}"
+                            Height="36" Padding="16,0" Cursor="Hand"
+                            BorderThickness="0" FontSize="13">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background"  Value="Transparent" />
+                                <Setter Property="Foreground"  Value="#94A3B8" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSlaveMode}" Value="True">
+                                        <Setter Property="Foreground"  Value="#F1F5F9" />
+                                        <Setter Property="Background"  Value="#2563EB" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                        CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center" />
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <Button Content="主站模式" Margin="8,0,0,0"
+                            Command="{Binding SwitchToMasterCommand}"
+                            Height="36" Padding="16,0" Cursor="Hand"
+                            BorderThickness="0" FontSize="13">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background"  Value="Transparent" />
+                                <Setter Property="Foreground"  Value="#94A3B8" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsMasterMode}" Value="True">
+                                        <Setter Property="Foreground"  Value="#F1F5F9" />
+                                        <Setter Property="Background"  Value="#2563EB" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                        CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center" />
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </StackPanel>
+
+            </DockPanel>
+        </Border>
+
+        <!-- ===== 主内容区（从站/主站面板切换） ===== -->
+        <Grid Grid.Row="1">
+            <!-- 主站面板（层级低，先声明） -->
+            <panels:MasterPanel DataContext="{Binding MasterVm}"
+                                Visibility="{Binding DataContext.IsMasterMode,
+                                    RelativeSource={RelativeSource AncestorType=Window},
+                                    Converter={StaticResource BoolVis}}" />
+            <!-- 从站面板（层级高，后声明，SlaveMode 时覆盖主站面板） -->
+            <panels:SlavePanel DataContext="{Binding SlaveVm}"
+                               Visibility="{Binding DataContext.IsSlaveMode,
+                                   RelativeSource={RelativeSource AncestorType=Window},
+                                   Converter={StaticResource BoolVis}}" />
+        </Grid>
+
+        <!-- ===== 日志面板 ===== -->
+        <Border Grid.Row="2" Background="#0A0D14" BorderBrush="#2E3352" BorderThickness="0,1,0,0">
+            <Grid Margin="12,8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="运行日志" Foreground="#64748B" FontSize="11"
+                           Margin="0,0,0,4" />
+
+                <ListBox Grid.Row="1"
+                         ItemsSource="{Binding Log.LogEntries}"
+                         Background="Transparent" BorderThickness="0"
+                         Foreground="#94A3B8" FontFamily="Consolas" FontSize="11"
+                         VirtualizingPanel.ScrollUnit="Item"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Foreground" Value="#94A3B8" />
+                            <Setter Property="Padding"    Value="2,1" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
