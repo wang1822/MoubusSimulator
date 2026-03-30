@@ -1,0 +1,236 @@
+<UserControl x:Class="SimulatorApp.Master.Views.MasterPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:SimulatorApp.Shared.Converters"
+             Background="{StaticResource BackgroundBrush}">
+    <UserControl.Resources>
+        <conv:BoolToColorConverter  x:Key="BoolToColor"/>
+        <conv:BoolToStringConverter x:Key="BoolToString"/>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <!-- 顶部连接配置区 -->
+            <RowDefinition Height="Auto"/>
+            <!-- 中间：左侧写操作 + 右侧数据表格 -->
+            <RowDefinition Height="*"/>
+            <!-- 底部日志 -->
+            <RowDefinition Height="180"/>
+        </Grid.RowDefinitions>
+
+        <!-- ===== 顶部连接配置区 ===== -->
+        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="12,8"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+            <StackPanel>
+                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- 协议 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center">
+                        <TextBlock Text="协议：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ComboBox Width="80" Style="{StaticResource DataComboBoxStyle}"
+                                  ItemsSource="{Binding ProtocolItems}" DisplayMemberPath="Display"
+                                  SelectedValuePath="Value" SelectedValue="{Binding Protocol, Mode=TwoWay}"/>
+                    </StackPanel>
+
+                    <!-- TCP 配置 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center"
+                                Visibility="{Binding IsTcpMode, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="目标IP：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <TextBox Width="130" Style="{StaticResource DataTextBoxStyle}"
+                                 Text="{Binding RemoteHost, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center"
+                                Visibility="{Binding IsTcpMode, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="端口：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <TextBox Width="70" Style="{StaticResource DataTextBoxStyle}"
+                                 Text="{Binding RemotePort, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+
+                    <!-- RTU 配置 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center"
+                                Visibility="{Binding IsRtuMode, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="串口：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ComboBox Width="90" Style="{StaticResource DataComboBoxStyle}"
+                                  ItemsSource="{Binding AvailableComPorts}"
+                                  SelectedItem="{Binding ComPort, Mode=TwoWay}"/>
+                        <Button Content="↻" Width="26" Height="26" Margin="4,0,0,0"
+                                Command="{Binding RefreshComPortsCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}" Padding="0" FontSize="14"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center"
+                                Visibility="{Binding IsRtuMode, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="波特率：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ComboBox Width="90" Style="{StaticResource DataComboBoxStyle}"
+                                  ItemsSource="{Binding BaudRateOptions}"
+                                  SelectedItem="{Binding BaudRate, Mode=TwoWay}"/>
+                    </StackPanel>
+
+                    <!-- 公共参数 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center">
+                        <TextBlock Text="Slave ID：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <TextBox Width="50" Style="{StaticResource DataTextBoxStyle}"
+                                 Text="{Binding SlaveId, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center">
+                        <TextBlock Text="起始地址：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <TextBox Width="80" Style="{StaticResource DataTextBoxStyle}"
+                                 Text="{Binding StartAddress, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center">
+                        <TextBlock Text="数量：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <TextBox Width="60" Style="{StaticResource DataTextBoxStyle}"
+                                 Text="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center">
+                        <TextBlock Text="轮询间隔(ms)：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <TextBox Width="70" Style="{StaticResource DataTextBoxStyle}"
+                                 Text="{Binding PollIntervalMs, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+
+                    <!-- 连接/断开 -->
+                    <Button Content="{Binding IsConnected, Converter={StaticResource BoolToString}, ConverterParameter='⏹ 断开连接|▶ 开始连接'}"
+                            Command="{Binding ToggleMasterCommand}"
+                            Width="110" Height="32"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Margin="0,0,12,4"/>
+
+                    <!-- 状态指示 -->
+                    <Ellipse Width="10" Height="10" VerticalAlignment="Center" Margin="0,0,6,0"
+                             Fill="{Binding IsConnected, Converter={StaticResource BoolToColor}, ConverterParameter='#22C55E|#475569'}"/>
+                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" FontSize="12" Margin="0,0,16,0"/>
+                    <TextBlock VerticalAlignment="Center" FontSize="12" Margin="0,0,0,0"
+                               Foreground="{StaticResource TextSecondaryBrush}">
+                        <Run Text="已轮询 "/><Run Text="{Binding PollCount}"/><Run Text=" 次"/>
+                    </TextBlock>
+                </WrapPanel>
+
+                <!-- 第二行：工具按钮 -->
+                <WrapPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <Button Content="📂 导入设备Excel" Command="{Binding ImportDeviceExcelCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
+                    <Button Content="📊 导出轮询数据" Command="{Binding ExportPollDataCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- ===== 中间内容区 ===== -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240" MinWidth="180"/>
+                <ColumnDefinition Width="4"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左侧：写寄存器操作区 -->
+            <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" Padding="12,8"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+                <StackPanel>
+                    <TextBlock Text="【写寄存器 FC06】" Style="{StaticResource SectionTitleStyle}"/>
+                    <Separator Style="{StaticResource DividerStyle}"/>
+
+                    <TextBlock Text="寄存器地址：" Style="{StaticResource LabelStyle}" Margin="0,8,0,2"/>
+                    <TextBox Style="{StaticResource DataTextBoxStyle}"
+                             Text="{Binding WriteAddress, UpdateSourceTrigger=PropertyChanged}"/>
+
+                    <TextBlock Text="写入值（ushort）：" Style="{StaticResource LabelStyle}" Margin="0,8,0,2"/>
+                    <TextBox Style="{StaticResource DataTextBoxStyle}"
+                             Text="{Binding WriteValue, UpdateSourceTrigger=PropertyChanged}"/>
+
+                    <Button Content="▶ 执行写入" Command="{Binding WriteRegisterCommand}"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Height="32" Margin="0,12,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 分隔条 -->
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                          Background="{StaticResource BorderBrush}" Cursor="SizeWE"/>
+
+            <!-- 右侧：轮询数据表格 -->
+            <Border Grid.Column="2">
+                <DataGrid ItemsSource="{Binding Registers}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          GridLinesVisibility="Horizontal"
+                          HeadersVisibility="Column"
+                          Background="{StaticResource BackgroundBrush}"
+                          RowBackground="Transparent"
+                          AlternatingRowBackground="#0D1526"
+                          BorderThickness="0"
+                          RowHeight="28"
+                          FontFamily="Consolas"
+                          FontSize="12">
+                    <DataGrid.ColumnHeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                            <Setter Property="Padding"    Value="8,4"/>
+                            <Setter Property="FontSize"   Value="12"/>
+                        </Style>
+                    </DataGrid.ColumnHeaderStyle>
+                    <DataGrid.CellStyle>
+                        <Style TargetType="DataGridCell">
+                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Padding"  Value="8,2"/>
+                        </Style>
+                    </DataGrid.CellStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="地址"     Binding="{Binding Address}"       Width="70"/>
+                        <DataGridTextColumn Header="原始值"   Binding="{Binding RawValue}"      Width="80"/>
+                        <DataGridTextColumn Header="十六进制" Binding="{Binding HexValue}"      Width="80"/>
+                        <DataGridTextColumn Header="说明"     Binding="{Binding Description}"   Width="*"/>
+                        <DataGridTextColumn Header="物理值"   Binding="{Binding PhysicalValue}" Width="120"/>
+                        <DataGridTextColumn Header="更新时间" Binding="{Binding LastUpdated}"   Width="120"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
+        </Grid>
+
+        <!-- ===== 底部日志区 ===== -->
+        <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+            <DockPanel>
+                <Border DockPanel.Dock="Top" Padding="12,4"
+                        Background="#13192D"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                    <DockPanel>
+                        <TextBlock Text="主站日志" Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <Button DockPanel.Dock="Right" Content="清空" Width="50" Height="22"
+                                Command="{Binding ClearLogCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                FontSize="11" Padding="4,0"/>
+                    </DockPanel>
+                </Border>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding LogEntries}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DisplayText}"
+                                           FontFamily="Consolas, Courier New"
+                                           FontSize="11" Padding="12,1">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Level}" Value="Warn">
+                                                    <Setter Property="Foreground" Value="#F97316"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Level}" Value="Error">
+                                                    <Setter Property="Foreground" Value="#EF4444"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>
