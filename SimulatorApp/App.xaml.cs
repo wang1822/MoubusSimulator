@@ -1,127 +1,118 @@
-using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
-using NLog;
-using SimulatorApp.Logging;
-using SimulatorApp.Models;
-using SimulatorApp.Models.AirConditioner;
-using SimulatorApp.Models.Bms;
-using SimulatorApp.Models.DIDOController;
-using SimulatorApp.Models.Dehumidifier;
-using SimulatorApp.Models.DieselGenerator;
-using SimulatorApp.Models.ExternalMeter;
-using SimulatorApp.Models.GasDetector;
-using SimulatorApp.Models.Mppt;
-using SimulatorApp.Models.Pcs;
-using SimulatorApp.Models.StorageMeter;
-using SimulatorApp.Models.StsControl;
-using SimulatorApp.Models.StsInstrument;
-using SimulatorApp.Services;
+using SimulatorApp.Master.Services;
+using SimulatorApp.Master.ViewModels;
+using SimulatorApp.Shared.Services;
+using SimulatorApp.Slave.Services;
+using SimulatorApp.Slave.ViewModels;
 using SimulatorApp.ViewModels;
-using SimulatorApp.Views;
+using System.Windows;
 
 namespace SimulatorApp;
 
+/// <summary>
+/// 应用程序入口，负责 DI 容器注册和全局异常处理。
+/// </summary>
 public partial class App : Application
 {
-    private IServiceProvider? _services;
+    /// <summary>DI 服务提供者（全局静态，便于在 XAML 代码后台获取服务）</summary>
+    public static IServiceProvider Services { get; private set; } = null!;
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 注册全局未处理异常
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        Current.DispatcherUnhandledException      += OnDispatcherUnhandledException;
+
+        // 构建 DI 容器（必须在 base.OnStartup 之前完成，因为 base 会触发 Startup 事件 → App_OnStartup）
+        Services = BuildServiceProvider();
+
         base.OnStartup(e);
 
-        // 初始化 NLog
-        LogManager.Setup().LoadConfigurationFromFile("Logging/nlog.config");
+        // 初始化 NLog（读取配置文件）
+        Shared.Logging.AppLogger.Info("GS215 EMS 设备故障模拟器 启动");
+    }
 
-        _services = BuildServices();
-
-        // 全局异常处理
-        DispatcherUnhandledException += (_, args) =>
-        {
-            var log = _services.GetRequiredService<AppLogger>();
-            log.Error("未处理异常", args.Exception);
-            args.Handled = true;
-        };
-
-        var mainWindow = _services.GetRequiredService<MainWindow>();
-        mainWindow.Show();
+    // App.xaml 中配置 Startup="App_OnStartup"，由此事件创建并显示主窗口（注入 DI ViewModel）
+    private void App_OnStartup(object sender, StartupEventArgs e)
+    {
+        var mainVm = Services.GetRequiredService<ViewModels.MainViewModel>();
+        var window = new Views.MainWindow(mainVm);
+        window.Show();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        LogManager.Shutdown();
+        // 停止 REST API 服务
+        var restApi = Services.GetService<RestApiService>();
+        restApi?.StopAsync().GetAwaiter().GetResult();
+
+        Shared.Logging.AppLogger.Info("应用程序退出");
+        NLog.LogManager.Shutdown();
         base.OnExit(e);
     }
 
-    private static IServiceProvider BuildServices()
+    // ----------------------------------------------------------------
+    // DI 注册
+    // ----------------------------------------------------------------
+
+    private static IServiceProvider BuildServiceProvider()
     {
-        var sc = new ServiceCollection();
+        var services = new ServiceCollection();
 
-        // ===== 基础服务 =====
-        sc.AddSingleton<AppLogger>();
-        sc.AddSingleton<RegisterBank>();
+        // ---- 共享服务（单例）----
+        services.AddSingleton<RegisterBank>();
+        services.AddSingleton<RestApiService>();
 
-        // ===== 设备 Model =====
-        sc.AddSingleton<PcsModel>();
-        sc.AddSingleton<BmsModel>();
-        sc.AddSingleton<MpptModel>();
-        sc.AddSingleton<StsInstrumentModel>();
-        sc.AddSingleton<StsControlModel>();
-        sc.AddSingleton<AirConditionerModel>();
-        sc.AddSingleton<DehumidifierModel>();
-        sc.AddSingleton<DieselGeneratorModel>();
-        sc.AddSingleton<GasDetectorModel>();
-        sc.AddSingleton<ExternalMeterModel>();
-        sc.AddSingleton<StorageMeterModel>();
-        sc.AddSingleton<DIDOControllerModel>();
+        // ---- 从站服务 ----
+        services.AddTransient<TcpSlaveService>();
+        services.AddTransient<RtuSlaveService>();
+        services.AddSingleton<RegisterMapService>();
 
-        // DeviceModelBase 集合（RegisterMapService 用）
-        sc.AddSingleton<IEnumerable<DeviceModelBase>>(sp => new DeviceModelBase[]
-        {
-            sp.GetRequiredService<PcsModel>(),
-            sp.GetRequiredService<BmsModel>(),
-            sp.GetRequiredService<MpptModel>(),
-            sp.GetRequiredService<StsInstrumentModel>(),
-            sp.GetRequiredService<StsControlModel>(),
-            sp.GetRequiredService<AirConditionerModel>(),
-            sp.GetRequiredService<DehumidifierModel>(),
-            sp.GetRequiredService<DieselGeneratorModel>(),
-            sp.GetRequiredService<GasDetectorModel>(),
-            sp.GetRequiredService<ExternalMeterModel>(),
-            sp.GetRequiredService<StorageMeterModel>(),
-            sp.GetRequiredService<DIDOControllerModel>(),
-        });
+        // ---- 主站服务 ----
+        services.AddTransient<TcpMasterService>();
+        services.AddTransient<RtuMasterService>();
 
-        // ===== Modbus 服务 =====
-        sc.AddSingleton<TcpSlaveService>();
-        sc.AddSingleton<RtuSlaveService>();
-        sc.AddSingleton<TcpMasterService>();
-        sc.AddSingleton<RtuMasterService>();
+        // ---- 从站 ViewModel（各设备，单例，整个程序生命周期） ----
+        services.AddSingleton<PcsViewModel>();
+        services.AddSingleton<BmsViewModel>();
+        services.AddSingleton<MpptViewModel>();
+        services.AddSingleton<AirConditionerViewModel>();
+        services.AddSingleton<DehumidifierViewModel>();
+        services.AddSingleton<ExternalMeterViewModel>();
+        services.AddSingleton<StorageMeterViewModel>();
+        services.AddSingleton<StsInstrumentViewModel>();
+        services.AddSingleton<StsControlViewModel>();
+        services.AddSingleton<DIDOControllerViewModel>();
+        services.AddSingleton<DieselGeneratorViewModel>();
+        services.AddSingleton<GasDetectorViewModel>();
+        services.AddSingleton<RegisterInspectorViewModel>();
+        services.AddSingleton<SlaveViewModel>();
 
-        // ===== RegisterMapService =====
-        sc.AddSingleton<IRegisterMapService, RegisterMapService>();
+        // ---- 主站 ViewModel ----
+        services.AddSingleton<MasterViewModel>();
 
-        // ===== 设备 ViewModel =====
-        sc.AddSingleton<PcsViewModel>();
-        sc.AddSingleton<BmsViewModel>();
-        sc.AddSingleton<MpptViewModel>();
-        sc.AddSingleton<StsInstrumentViewModel>();
-        sc.AddSingleton<StsControlViewModel>();
-        sc.AddSingleton<AirConditionerViewModel>();
-        sc.AddSingleton<DehumidifierViewModel>();
-        sc.AddSingleton<DieselGeneratorViewModel>();
-        sc.AddSingleton<GasDetectorViewModel>();
-        sc.AddSingleton<ExternalMeterViewModel>();
-        sc.AddSingleton<StorageMeterViewModel>();
-        sc.AddSingleton<DIDOControllerViewModel>();
+        // ---- 主 ViewModel ----
+        services.AddSingleton<MainViewModel>();
 
-        // ===== 主 ViewModel =====
-        sc.AddSingleton<SlaveViewModel>();
-        sc.AddSingleton<MasterViewModel>();
-        sc.AddSingleton<MainViewModel>();
+        return services.BuildServiceProvider();
+    }
 
-        // ===== Views =====
-        sc.AddTransient<MainWindow>();
+    // ----------------------------------------------------------------
+    // 全局异常处理
+    // ----------------------------------------------------------------
 
-        return sc.BuildServiceProvider();
+    private void OnDispatcherUnhandledException(object sender,
+        System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        Shared.Logging.AppLogger.Error("UI 线程未处理异常", e.Exception);
+        MessageBox.Show($"发生未处理异常：\n{e.Exception.Message}\n\n请查看日志文件。",
+            "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        e.Handled = true; // 防止崩溃
+    }
+
+    private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        if (e.ExceptionObject is Exception ex)
+            Shared.Logging.AppLogger.Error("非 UI 线程未处理异常", ex);
     }
 }
