@@ -9,7 +9,8 @@ namespace SimulatorApp.Slave.Models.DieselGenerator;
 public class DieselGeneratorModel : DeviceModelBase
 {
     public override string DeviceName => "柴发";
-    public override int BaseAddress   => 53504;
+    public override int BaseAddress    => 53504;
+    public override int RegisterCount  => 64;
 
     // 基本遥测（字段待协议文档确认）
     public double PhaseAVolt    { get; set; } = 220.0; // A相电压 V

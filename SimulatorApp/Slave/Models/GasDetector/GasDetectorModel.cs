@@ -9,7 +9,8 @@ namespace SimulatorApp.Slave.Models.GasDetector;
 public class GasDetectorModel : DeviceModelBase
 {
     public override string DeviceName => "气体检测";
-    public override int BaseAddress   => 53760;
+    public override int BaseAddress    => 53760;
+    public override int RegisterCount  => 16;
 
     // 气体浓度（占位，待协议确认）
     public double H2Concentration  { get; set; } = 0.0;  // H2 浓度 ppm

@@ -9,7 +9,8 @@ namespace SimulatorApp.Slave.Models.AirConditioner;
 public class AirConditionerModel : DeviceModelBase
 {
     public override string DeviceName => "空调";
-    public override int BaseAddress   => 52352;
+    public override int BaseAddress    => 52352;
+    public override int RegisterCount  => 73;
 
     // 遥测
     public double AirOutTemp1         { get; set; } = 25.0;  // ×0.1 ℃，偏移 +6

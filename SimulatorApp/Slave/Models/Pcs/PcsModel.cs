@@ -11,7 +11,8 @@ namespace SimulatorApp.Slave.Models.Pcs;
 public class PcsModel : DeviceModelBase
 {
     public override string DeviceName => "PCS 储能变流器";
-    public override int BaseAddress   => 7296;
+    public override int BaseAddress    => 7296;
+    public override int RegisterCount  => 345;
 
     // ----------------------------------------------------------------
     // 遥测字段（物理值，界面直接显示）

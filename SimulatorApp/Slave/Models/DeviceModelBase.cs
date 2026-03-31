@@ -16,6 +16,12 @@ public abstract class DeviceModelBase
     /// <summary>寄存器基地址（Holding Register，0-based）</summary>
     public abstract int BaseAddress { get; }
 
+    /// <summary>
+    /// 该设备占用的寄存器数量，用于取消勾选时清零对应地址范围。
+    /// 默认 0 表示不清零（如 RegisterInspector 等特殊设备）。
+    /// </summary>
+    public virtual int RegisterCount => 0;
+
     /// <summary>从站 ID（1~247）</summary>
     public byte SlaveId { get; set; } = 1;
 

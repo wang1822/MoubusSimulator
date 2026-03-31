@@ -9,7 +9,8 @@ namespace SimulatorApp.Slave.Models.StsInstrument;
 public class StsInstrumentModel : DeviceModelBase
 {
     public override string DeviceName => "STS 仪表";
-    public override int BaseAddress   => 1408;
+    public override int BaseAddress    => 1408;
+    public override int RegisterCount  => 161;
 
     public double GridVoltA         { get; set; } = 220.0; // ×0.1 V，偏移 +20
     public double GridVoltB         { get; set; } = 220.0;

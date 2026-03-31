@@ -10,7 +10,8 @@ namespace SimulatorApp.Slave.Models.ExternalMeter;
 public class ExternalMeterModel : DeviceModelBase
 {
     public override string DeviceName => "外部电表";
-    public override int BaseAddress   => 384;
+    public override int BaseAddress    => 384;
+    public override int RegisterCount  => 178;
 
     // 遥测（全部 float32，×0.001）
     public double L1PhaseVoltage  { get; set; } = 220.0;
