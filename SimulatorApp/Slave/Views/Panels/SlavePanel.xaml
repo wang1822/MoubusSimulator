@@ -9,7 +9,7 @@
         <conv:BoolToStringConverter x:Key="BoolToString"/>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
         <DataTemplate x:Key="DeviceItemTemplate">
-            <Border Padding="8,6" Cursor="Hand">
+            <Border Padding="6,5" Cursor="Hand">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="Transparent"/>
@@ -20,8 +20,18 @@
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
-                <TextBlock Text="{Binding DeviceName}" Foreground="{StaticResource TextPrimaryBrush}"
-                           FontSize="13"/>
+                <DockPanel>
+                    <!-- 设备勾选框：勾选后启动监听生效、自动模拟运行、导出时包含此设备 -->
+                    <CheckBox DockPanel.Dock="Right"
+                              IsChecked="{Binding IsSimulating, Mode=TwoWay}"
+                              VerticalAlignment="Center" Margin="4,0,0,0"
+                              ToolTip="勾选后：启动监听时寄存器生效，定时模拟运行，导出时包含此设备"
+                              Click="OnSimCheckBoxClick"/>
+                    <TextBlock Text="{Binding DeviceName}"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               FontSize="13" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
             </Border>
         </DataTemplate>
     </UserControl.Resources>
@@ -36,93 +46,165 @@
             <RowDefinition Height="180"/>
         </Grid.RowDefinitions>
 
-        <!-- ===== 顶部连接配置区 ===== -->
-        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="12,8"
+        <!-- ===== 顶部：监听配置列表 ===== -->
+        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="10,6"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
             <StackPanel>
-                <!-- 第一行：连接配置 + 启停 + 状态 -->
-                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <!-- 协议选择（用 SelectedIndex 绑定，避免 int→ProtocolType 类型转换错误） -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center">
-                        <TextBlock Text="协议：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <ComboBox Width="80" Style="{StaticResource DataComboBoxStyle}"
-                                  ItemsSource="{Binding ProtocolNames}"
-                                  SelectedIndex="{Binding ProtocolIndex, Mode=TwoWay}"/>
-                    </StackPanel>
 
-                    <!-- TCP 配置（协议=TCP时显示） -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center"
-                                Visibility="{Binding IsTcpMode, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="监听地址：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <!-- IsEditable=True 允许手动输入自定义 IP -->
-                        <ComboBox Width="140" Style="{StaticResource DataComboBoxStyle}"
-                                  IsEditable="True"
-                                  ItemsSource="{Binding AvailableTcpAddresses}"
-                                  Text="{Binding ListenAddress, UpdateSourceTrigger=PropertyChanged}"/>
-                        <Button Content="↻" Width="26" Height="26" Margin="4,0,0,0"
+                <!-- 标题栏：全局操作按钮 -->
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock DockPanel.Dock="Left" Text="监听配置"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <WrapPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Content="↻" Width="26" Height="26" Margin="0,0,6,0"
                                 Command="{Binding RefreshTcpAddressesCommand}"
                                 Style="{StaticResource SecondaryButtonStyle}" Padding="0" FontSize="14"
-                                ToolTip="重新检测本地网卡 IP"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center"
-                                Visibility="{Binding IsTcpMode, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="端口：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <TextBox Width="70" Style="{StaticResource DataTextBoxStyle}"
-                                 Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}"/>
-                    </StackPanel>
+                                ToolTip="刷新本地网卡 IP 和串口列表"/>
+                        <Button Content="＋ 新增监听" Height="26" Padding="8,0" Margin="0,0,6,0"
+                                Command="{Binding AddListenerCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                ToolTip="添加一条新的监听端点配置"/>
+                        <Button Content="▶ 启动全部" Height="26" Padding="8,0" Margin="0,0,6,0"
+                                Command="{Binding StartAllListenersCommand}"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                ToolTip="启动所有已勾选且未运行的监听"/>
+                        <Button Content="⏹ 停止全部" Height="26" Padding="8,0"
+                                Command="{Binding StopAllListenersCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                ToolTip="停止所有正在运行的监听"/>
+                    </WrapPanel>
+                </DockPanel>
 
-                    <!-- RTU 配置（协议=RTU时显示） -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center"
-                                Visibility="{Binding IsRtuMode, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="串口：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <ComboBox Width="90" Style="{StaticResource DataComboBoxStyle}"
-                                  ItemsSource="{Binding AvailableComPorts}"
-                                  SelectedItem="{Binding ComPort, Mode=TwoWay}"/>
-                        <Button Content="↻" Width="26" Height="26" Margin="4,0,0,0"
-                                Command="{Binding RefreshComPortsCommand}"
-                                Style="{StaticResource SecondaryButtonStyle}" Padding="0" FontSize="14"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center"
-                                Visibility="{Binding IsRtuMode, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="波特率：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <ComboBox Width="90" Style="{StaticResource DataComboBoxStyle}"
-                                  ItemsSource="{Binding BaudRateOptions}"
-                                  SelectedItem="{Binding BaudRate, Mode=TwoWay}"/>
-                    </StackPanel>
+                <!-- 监听配置列表 -->
+                <ScrollViewer MaxHeight="130" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Listeners}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,1" Padding="6,3"
+                                        Background="#0D1117"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="1" CornerRadius="3">
+                                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
 
-                    <!-- Slave ID（公共） -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center">
-                        <TextBlock Text="Slave ID：" Style="{StaticResource LabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <TextBox Width="50" Style="{StaticResource DataTextBoxStyle}"
-                                 Text="{Binding SlaveId, UpdateSourceTrigger=PropertyChanged}"/>
-                    </StackPanel>
+                                        <!-- 是否启用 -->
+                                        <CheckBox IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                                  VerticalAlignment="Center" Margin="0,0,6,0"
+                                                  ToolTip="勾选后才会被「启动全部」包含"/>
 
-                    <!-- 启动/停止按钮 -->
-                    <Button Content="{Binding IsRunning, Converter={StaticResource BoolToString}, ConverterParameter='⏹ 停止监听|▶ 启动监听'}"
-                            Command="{Binding ToggleSlaveCommand}"
-                            Width="110" Height="32"
-                            Style="{StaticResource PrimaryButtonStyle}"
-                            Margin="0,0,12,4"/>
+                                        <!-- 协议 -->
+                                        <ComboBox Width="60" Height="24"
+                                                  ItemsSource="{Binding ProtocolNames}"
+                                                  SelectedIndex="{Binding ProtocolIndex, Mode=TwoWay}"
+                                                  Style="{StaticResource DataComboBoxStyle}"
+                                                  Margin="0,0,6,0"/>
 
-                    <!-- 运行状态指示灯 -->
-                    <Ellipse Width="10" Height="10" VerticalAlignment="Center" Margin="0,0,6,0"
-                             Fill="{Binding IsRunning, Converter={StaticResource BoolToColor}, ConverterParameter='#22C55E|#475569'}"/>
-                    <TextBlock Text="{Binding IsRunning, Converter={StaticResource BoolToString}, ConverterParameter='监听中|已停止'}"
-                               Foreground="{Binding IsRunning, Converter={StaticResource BoolToColor}, ConverterParameter='#22C55E|#94A3B8'}"
-                               VerticalAlignment="Center" FontSize="12"/>
-                </WrapPanel>
+                                        <!-- TCP 配置 -->
+                                        <StackPanel Orientation="Horizontal"
+                                                    Visibility="{Binding IsTcpMode, Converter={StaticResource BoolToVis}}">
+                                            <ComboBox Width="130" Height="24" IsEditable="True"
+                                                      ItemsSource="{Binding DataContext.AvailableTcpAddresses,
+                                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                      Text="{Binding ListenAddress, UpdateSourceTrigger=PropertyChanged}"
+                                                      Style="{StaticResource DataComboBoxStyle}"
+                                                      Margin="0,0,4,0"/>
+                                            <TextBlock Text=":" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,2,0"/>
+                                            <TextBox Width="52" Height="24"
+                                                     Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}"
+                                                     Style="{StaticResource DataTextBoxStyle}"
+                                                     Margin="0,0,6,0"/>
+                                        </StackPanel>
 
-                <!-- 第二行：工具按钮（始终在独立行，不会被挤掉） -->
-                <WrapPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <!-- RTU 配置 -->
+                                        <StackPanel Orientation="Horizontal"
+                                                    Visibility="{Binding IsRtuMode, Converter={StaticResource BoolToVis}}">
+                                            <ComboBox Width="80" Height="24"
+                                                      ItemsSource="{Binding DataContext.AvailableComPorts,
+                                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                      SelectedItem="{Binding ComPort, Mode=TwoWay}"
+                                                      Style="{StaticResource DataComboBoxStyle}"
+                                                      Margin="0,0,4,0"/>
+                                            <ComboBox Width="80" Height="24"
+                                                      ItemsSource="{Binding DataContext.BaudRateOptions,
+                                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                      SelectedItem="{Binding BaudRate, Mode=TwoWay}"
+                                                      Style="{StaticResource DataComboBoxStyle}"
+                                                      Margin="0,0,6,0"/>
+                                        </StackPanel>
+
+                                        <!-- Slave ID -->
+                                        <TextBlock Text="ID:" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="11" Margin="0,0,3,0"/>
+                                        <TextBox Width="36" Height="24"
+                                                 Text="{Binding SlaveId, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource DataTextBoxStyle}"
+                                                 Margin="0,0,10,0"/>
+
+                                        <!-- 状态指示灯 + 文字 -->
+                                        <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,4,0"
+                                                 Fill="{Binding IsRunning, Converter={StaticResource BoolToColor},
+                                                        ConverterParameter='#22C55E|#475569'}"/>
+                                        <TextBlock Text="{Binding StatusText}"
+                                                   Foreground="{Binding IsRunning, Converter={StaticResource BoolToColor},
+                                                               ConverterParameter='#22C55E|#94A3B8'}"
+                                                   FontSize="11" VerticalAlignment="Center"
+                                                   MinWidth="90" Margin="0,0,10,0"/>
+
+                                        <!-- 启动/停止 -->
+                                        <Button Height="24" Padding="8,0" Margin="0,0,4,0"
+                                                Content="{Binding IsRunning, Converter={StaticResource BoolToString},
+                                                          ConverterParameter='⏹ 停止|▶ 启动'}"
+                                                Style="{StaticResource PrimaryButtonStyle}"
+                                                Command="{Binding DataContext.ToggleListenerCommand,
+                                                         RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"/>
+
+                                        <!-- 删除 -->
+                                        <Button Height="24" Width="24" Content="×" Padding="0"
+                                                FontSize="13"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Command="{Binding DataContext.RemoveListenerCommand,
+                                                         RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip="删除此监听配置"/>
+                                    </WrapPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- 全局状态行 + 工具按钮 -->
+                <WrapPanel Orientation="Horizontal" Margin="0,5,0,0">
+                    <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,5,0"
+                             Fill="{Binding IsRunning, Converter={StaticResource BoolToColor},
+                                    ConverterParameter='#22C55E|#475569'}"/>
+                    <TextBlock Text="{Binding IsRunning, Converter={StaticResource BoolToString},
+                                      ConverterParameter='监听中|已停止'}"
+                               Foreground="{Binding IsRunning, Converter={StaticResource BoolToColor},
+                                           ConverterParameter='#22C55E|#94A3B8'}"
+                               VerticalAlignment="Center" FontSize="11" Margin="0,0,16,0"/>
+                    <TextBlock Text="{Binding RequestCount, StringFormat='请求总计：{0}'}"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" FontSize="11" Margin="0,0,20,0"/>
+
                     <Button Content="📊 导出设备Excel" Command="{Binding ExportDeviceExcelCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
+                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0"
+                            ToolTip="将所有已勾选设备导出为多 Sheet Excel"/>
                     <Button Content="📂 导入设备Excel" Command="{Binding ImportDeviceExcelCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
-                    <Button Content="📸 导出快照(JSON)" Command="{Binding ExportSnapshotCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
-                    <Button Content="📂 导入快照(JSON)" Command="{Binding ImportSnapshotCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
+                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0"/>
+                    <Button Content="📋 粘贴导入" Command="{Binding PasteImportDeviceCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0"
+                            ToolTip="在 Excel 中复制数据行后点此，自动识别设备类型并追加到列表底部"/>
+                    <Button Content="📸 导出快照" Command="{Binding ExportSnapshotCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0"/>
+                    <Button Content="📂 导入快照" Command="{Binding ImportSnapshotCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}"/>
                 </WrapPanel>
+
             </StackPanel>
         </Border>
 
@@ -140,13 +222,6 @@
             <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
                 <DockPanel>
-                    <!-- 底部"+"导入按钮 -->
-                    <Button DockPanel.Dock="Bottom"
-                            Content="＋ 导入自定义设备"
-                            Command="{Binding ImportCustomDeviceCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}"
-                            Margin="6,4" Height="32" FontSize="12"/>
-
                     <!-- 设备选择列表 -->
                     <ListBox ItemsSource="{Binding DeviceList}"
                              SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"

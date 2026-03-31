@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using SimulatorApp.Shared.Helpers;
 using SimulatorApp.Shared.Services;
 using SimulatorApp.Slave.Models;
 using SimulatorApp.Slave.Models.Dehumidifier;
@@ -17,14 +18,54 @@ public partial class DehumidifierViewModel : DeviceViewModelBase
     public DehumidifierViewModel(RegisterBank bank, RegisterMapService mapService) : base(bank, mapService)
     { InitAlarmItems(); FlushToRegisters(); }
 
-    [ObservableProperty] private double _temperature  = 25.0;
-    [ObservableProperty] private double _humidity     = 70.0;
-    [ObservableProperty] private double _ntc1Temp     = 25.0;
-    [ObservableProperty] private double _ntc2Temp     = 25.0;
-    [ObservableProperty] private double _inputVoltage = 12.0;
-    [ObservableProperty] private uint   _fan1Runtime  = 0;
-    [ObservableProperty] private uint   _fan2Runtime  = 0;
-    [ObservableProperty] private double _fan1Current  = 0.0;
+    // BaseAddress = 4097 (0x1001)
+    [ObservableProperty]
+    [property: RegisterField("环境温度",     4109, "S16×0.1 ℃",   Min = -40,  Max = 80)]
+    private double _temperature  = 25.0;
+
+    [ObservableProperty]
+    [property: RegisterField("相对湿度",     4110, "U16×0.1 %RH", Min = 0,    Max = 100)]
+    private double _humidity     = 70.0;
+
+    [ObservableProperty]
+    [property: RegisterField("NTC1 温度",   4111, "S16×0.1 ℃",   Min = -40,  Max = 150)]
+    private double _ntc1Temp     = 25.0;
+
+    [ObservableProperty]
+    [property: RegisterField("NTC2 温度",   4112, "S16×0.1 ℃",   Min = -40,  Max = 150)]
+    private double _ntc2Temp     = 25.0;
+
+    [ObservableProperty]
+    [property: RegisterField("输入电压",     4113, "U16×0.01 V",  Min = 0,    Max = 30)]
+    private double _inputVoltage = 12.0;
+
+    [ObservableProperty]
+    [property: RegisterField("风机1运行时间", 4118, "U32 h",       Min = 0)]
+    private uint   _fan1Runtime  = 0;
+
+    [ObservableProperty]
+    [property: RegisterField("风机2运行时间", 4120, "U32 h",       Min = 0)]
+    private uint   _fan2Runtime  = 0;
+
+    [ObservableProperty]
+    [property: RegisterField("风机1电流",    4128, "U16×0.001 A", Min = 0,    Max = 10)]
+    private double _fan1Current  = 0.0;
+
+    /// <summary>运行状态字（bitmask，BaseAddress+8=4105，U32）</summary>
+    [RegisterField("运行状态字", 4105, "U32")]
+    public uint StatusWordValue
+    {
+        get => (uint)StatusItems.Where(x => x.IsChecked).Aggregate(0, (a, x) => a | x.BitMask);
+        set { SetBitmask(StatusItems, (ushort)value); FlushToRegisters(); }
+    }
+
+    /// <summary>故障字（bitmask，BaseAddress+10=4107，U32）</summary>
+    [RegisterField("故障字", 4107, "U32")]
+    public uint FaultWordValue
+    {
+        get => (uint)FaultItems.Where(x => x.IsChecked).Aggregate(0, (a, x) => a | x.BitMask);
+        set { SetBitmask(FaultItems, (ushort)value); FlushToRegisters(); }
+    }
 
     partial void OnTemperatureChanged(double v)  => FlushToRegisters();
     partial void OnHumidityChanged(double v)     => FlushToRegisters();

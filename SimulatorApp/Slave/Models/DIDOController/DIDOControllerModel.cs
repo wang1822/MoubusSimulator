@@ -9,7 +9,8 @@ namespace SimulatorApp.Slave.Models.DIDOController;
 public class DIDOControllerModel : DeviceModelBase
 {
     public override string DeviceName => "DI/DO 动环控制器";
-    public override int BaseAddress   => 60544;
+    public override int BaseAddress    => 60544;
+    public override int RegisterCount  => 41;
 
     // DI 输入状态（只读/可模拟）
     public int EmergencyStop      { get; set; } = 0; // 偏移 +0：0=未按下,1=按下

@@ -9,7 +9,8 @@ namespace SimulatorApp.Slave.Models.StsControl;
 public class StsControlModel : DeviceModelBase
 {
     public override string DeviceName => "STS 控制IO卡";
-    public override int BaseAddress   => 1920;
+    public override int BaseAddress    => 1920;
+    public override int RegisterCount  => 194;
 
     // 电表遥测（float32，×0.001）
     public double L1PhaseVoltage { get; set; } = 220.0; // 偏移 +0

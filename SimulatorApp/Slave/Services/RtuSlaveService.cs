@@ -61,17 +61,21 @@ public class RtuSlaveService : ISlaveService
             _slave.DataStore.DataStoreReadFrom  += (s, e) => OnDataStoreRead(e);
             _slave.DataStore.DataStoreWrittenTo += (s, e) => OnDataStoreWritten(e);
 
+            _bank.OnRegisterWritten += SyncOneRegister;
+
             AppLogger.Info($"RTU 从站启动：{PortName}  波特率={BaudRate}  SlaveID={slaveId}");
             IsRunning = true;
 
+            var token = _cts.Token;
             _listenTask = Task.Run(() =>
             {
                 try { _slave.Listen(); }
-                catch (Exception ex) when (!_cts.Token.IsCancellationRequested)
+                catch (Exception ex)
                 {
-                    AppLogger.Error("RTU 从站监听异常", ex);
+                    if (!token.IsCancellationRequested)
+                        AppLogger.Error("RTU 从站监听异常", ex);
                 }
-            }, _cts.Token);
+            });
 
             await Task.CompletedTask;
         }
@@ -87,6 +91,7 @@ public class RtuSlaveService : ISlaveService
     {
         if (!IsRunning) return;
         IsRunning = false;
+        _bank.OnRegisterWritten -= SyncOneRegister;
         _cts?.Cancel();
         _slave?.Dispose();
         _serialPort?.Close();
@@ -98,6 +103,12 @@ public class RtuSlaveService : ISlaveService
             catch { }
         }
         AppLogger.Info("RTU 从站已停止");
+    }
+
+    private void SyncOneRegister(int address, ushort value)
+    {
+        if (_dataStore != null && (uint)address < 65536)
+            _dataStore.HoldingRegisters[(ushort)(address + 1)] = value;
     }
 
     private void SyncBankToDataStore()
@@ -122,7 +133,7 @@ public class RtuSlaveService : ISlaveService
             var regs = e.Data.B; // ReadOnlyCollection<ushort>
             for (int i = 0; i < regs.Count; i++)
             {
-                int addr = e.StartAddress + i - 1;
+                int addr = e.StartAddress + i; // e.StartAddress 是 PDU 地址（0-based），与 bank 地址相同
                 if ((uint)addr < 65536)
                     _bank.Write(addr, regs[i]);
             }

@@ -57,18 +57,26 @@ public class TcpSlaveService : ISlaveService
             _slave.DataStore.DataStoreReadFrom  += (s, e) => OnDataStoreRead(e);
             _slave.DataStore.DataStoreWrittenTo += (s, e) => OnDataStoreWritten(e);
 
+            // RegisterBank 写入时实时同步到 DataStore（NModbus4 索引从 1 开始）
+            _bank.OnRegisterWritten += SyncOneRegister;
+
             AppLogger.Info($"TCP 从站启动：{ListenAddress}:{Port}  SlaveID={slaveId}");
             IsRunning = true;
 
-            // Listen() 是同步阻塞调用，放到后台线程
+            // Listen() 是同步阻塞调用，放到后台线程。
+            // 不传 token 给 Task.Run，避免 Stop 时 token 已取消导致 Task 直接变 Canceled。
+            // 用局部变量捕获 token，避免 _cts 被置空时的竞态。
+            var token = _cts.Token;
             _listenTask = Task.Run(() =>
             {
                 try { _slave.Listen(); }
-                catch (Exception ex) when (!_cts.Token.IsCancellationRequested)
+                catch (Exception ex)
                 {
-                    AppLogger.Error("TCP 从站监听异常", ex);
+                    // 主动停止时 Listen() 会因 socket 关闭抛异常，属于正常流程，静默忽略。
+                    if (!token.IsCancellationRequested)
+                        AppLogger.Error("TCP 从站监听异常", ex);
                 }
-            }, _cts.Token);
+            });
 
             await Task.CompletedTask;
         }
@@ -84,6 +92,7 @@ public class TcpSlaveService : ISlaveService
     {
         if (!IsRunning) return;
         IsRunning = false;
+        _bank.OnRegisterWritten -= SyncOneRegister;
         _cts?.Cancel();
         _slave?.Dispose();
         _tcpListener?.Stop();
@@ -94,6 +103,12 @@ public class TcpSlaveService : ISlaveService
             catch { }
         }
         AppLogger.Info("TCP 从站已停止");
+    }
+
+    private void SyncOneRegister(int address, ushort value)
+    {
+        if (_dataStore != null && (uint)address < 65536)
+            _dataStore.HoldingRegisters[(ushort)(address + 1)] = value;
     }
 
     /// <summary>将 RegisterBank 当前值同步到 NModbus4 DataStore（HoldingRegisters 从索引 1 开始）</summary>
@@ -119,7 +134,7 @@ public class TcpSlaveService : ISlaveService
             var regs = e.Data.B; // ReadOnlyCollection<ushort>
             for (int i = 0; i < regs.Count; i++)
             {
-                int addr = e.StartAddress + i - 1; // DataStore 索引从 1 开始
+                int addr = e.StartAddress + i; // e.StartAddress 是 PDU 地址（0-based），与 bank 地址相同
                 if ((uint)addr < 65536)
                     _bank.Write(addr, regs[i]);
             }

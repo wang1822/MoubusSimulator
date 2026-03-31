@@ -3,13 +3,14 @@ using SimulatorApp.Shared.Services;
 namespace SimulatorApp.Slave.Models.Dehumidifier;
 
 /// <summary>
-/// 除湿机数据模型（基地址 53248）。
-/// 字段定义参考设计文档第 8.7 节（基于 FX 除湿机通讯协议 V1.1）。
+/// 除湿机数据模型（基地址 4097，即 0x1001）。
+/// 字段定义参考 FX 除湿机通讯协议 V1.1。
 /// </summary>
 public class DehumidifierModel : DeviceModelBase
 {
     public override string DeviceName => "除湿机";
-    public override int BaseAddress   => 53248;
+    public override int BaseAddress    => 4097;   // 0x1001
+    public override int RegisterCount  => 32;
 
     // 遥测
     public double Temperature  { get; set; } = 25.0;  // S16×0.1 ℃，偏移 +12

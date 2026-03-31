@@ -9,7 +9,8 @@ namespace SimulatorApp.Slave.Models.Mppt;
 public class MpptModel : DeviceModelBase
 {
     public override string DeviceName => "MPPT 光伏";
-    public override int BaseAddress   => 40064;
+    public override int BaseAddress    => 40064;
+    public override int RegisterCount  => 157;
 
     // 遥测
     public double OutputVolt       { get; set; } = 600.0;  // ×0.1 V，偏移 +97

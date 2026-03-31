@@ -10,7 +10,8 @@ namespace SimulatorApp.Slave.Models.StorageMeter;
 public class StorageMeterModel : ExternalMeterModel
 {
     public override string DeviceName => "储能电表";
-    public override int BaseAddress   => 48256;
+    public override int BaseAddress    => 48256;
+    public override int RegisterCount  => 178;
 
     // 字段继承自 ExternalMeterModel，无需重写 ToRegisters / FromRegisters
     // 基类方法通过 BaseAddress 属性自动使用 48256

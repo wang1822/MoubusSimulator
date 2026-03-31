@@ -2,6 +2,7 @@ using ClosedXML.Excel;
 using SimulatorApp.Slave.Models;
 using SimulatorApp.Slave.Services;
 using SimulatorApp.Slave.ViewModels;
+using System.Reflection;
 
 namespace SimulatorApp.Shared.Helpers;
 
@@ -142,46 +143,139 @@ public static class ExcelHelper
     // 导出 ViewModel 数据（供从站"导出当前设备Excel"按钮使用）
     // ----------------------------------------------------------------
 
+    // 导出列索引常量
+    private const int ColChinese = 1;  // 中文名
+    private const int ColType    = 2;  // 类型
+    private const int ColAddrDec = 3;  // 地址(Dec)
+    private const int ColAddrHex = 4;  // 地址(Hex)
+    private const int ColValue   = 5;  // 值
+    private const int ColMax     = 6;  // 最大值
+    private const int ColMin     = 7;  // 最小值
+
     /// <summary>
-    /// 将设备 ViewModel 的当前寄存器值（通过 RegisterMapService 获取）导出为 Excel。
+    /// 将单个设备 ViewModel 导出为 Excel（单 Sheet）。
     /// </summary>
     public static void ExportDeviceViewModel(string filePath, DeviceViewModelBase vm)
     {
-        // 导出设备名和类型信息
         using var wb = new XLWorkbook();
         var sheetName = vm.DeviceName.Length > 31 ? vm.DeviceName[..31] : vm.DeviceName;
-        var ws = wb.AddWorksheet(sheetName);
+        WriteDeviceSheet(wb.AddWorksheet(sheetName), vm);
+        wb.SaveAs(filePath);
+    }
 
-        ws.Cell(1, 1).Value = "设备名";
-        ws.Cell(1, 2).Value = vm.DeviceName;
+    /// <summary>
+    /// 将多个已勾选设备 ViewModel 各自导出为独立 Excel 文件，保存到指定文件夹。
+    /// 文件名：{设备名}_{yyyyMMdd_HHmmss}.xlsx
+    /// </summary>
+    /// <returns>已保存的文件路径列表</returns>
+    public static List<string> ExportDeviceViewModelsToFolder(string folderPath, IEnumerable<DeviceViewModelBase> vms)
+    {
+        var saved = new List<string>();
+        var ts    = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        foreach (var vm in vms)
+        {
+            var safeName = string.Concat(vm.DeviceName.Split(System.IO.Path.GetInvalidFileNameChars()));
+            var filePath = System.IO.Path.Combine(folderPath, $"{safeName}_{ts}.xlsx");
+            using var wb = new XLWorkbook();
+            var sheetName = vm.DeviceName.Length > 31 ? vm.DeviceName[..31] : vm.DeviceName;
+            WriteDeviceSheet(wb.AddWorksheet(sheetName), vm);
+            wb.SaveAs(filePath);
+            saved.Add(filePath);
+        }
+        return saved;
+    }
+
+    /// <summary>
+    /// 向已有 Worksheet 写入设备字段数据。
+    /// 列：中文名（必）| 类型（必）| 地址(Dec)（必）| 地址(Hex) | 值 | 最大值 | 最小值
+    /// 优先读取 [RegisterField] 特性；无特性时用英文属性名兜底，地址列留空。
+    /// </summary>
+    private static void WriteDeviceSheet(IXLWorksheet ws, DeviceViewModelBase vm)
+    {
+        // 信息行
+        ws.Cell(1, 1).Value = "设备名";   ws.Cell(1, 2).Value = vm.DeviceName;
+        ws.Cell(2, 1).Value = "导出时间"; ws.Cell(2, 2).Value = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         ws.Cell(1, 1).Style.Font.Bold = true;
+        ws.Cell(2, 1).Style.Font.Bold = true;
 
-        ws.Cell(2, 1).Value = "导出时间";
-        ws.Cell(2, 2).Value = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-
-        var headerRange = ws.Range(4, 1, 4, 3);
-        ws.Cell(4, 1).Value = "属性名";
-        ws.Cell(4, 2).Value = "当前值";
-        ws.Cell(4, 3).Value = "备注";
+        // 表头（第4行）
+        ws.Cell(4, ColChinese).Value = "中文名";
+        ws.Cell(4, ColType   ).Value = "类型";
+        ws.Cell(4, ColAddrDec).Value = "地址(Dec)";
+        ws.Cell(4, ColAddrHex).Value = "地址(Hex)";
+        ws.Cell(4, ColValue  ).Value = "值";
+        ws.Cell(4, ColMax    ).Value = "最大值";
+        ws.Cell(4, ColMin    ).Value = "最小值";
+        var headerRange = ws.Range(4, 1, 4, ColMin);
         headerRange.Style.Font.Bold = true;
         headerRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#2563EB");
         headerRange.Style.Font.FontColor = XLColor.White;
 
-        // 通过反射获取 ViewModel 的所有公共 double/int/string 属性
+        // 数据行
         int row = 5;
         foreach (var prop in vm.GetType().GetProperties()
-            .Where(p => p.CanRead && (p.PropertyType == typeof(double)
-                                   || p.PropertyType == typeof(int)
-                                   || p.PropertyType == typeof(float)
-                                   || p.PropertyType == typeof(ushort))))
+                     .Where(p => p.CanRead && IsExportableType(p.PropertyType)))
         {
-            ws.Cell(row, 1).Value = prop.Name;
-            ws.Cell(row, 2).Value = prop.GetValue(vm)?.ToString() ?? "";
+            var attr  = prop.GetCustomAttribute<RegisterFieldAttribute>();
+            var value = prop.GetValue(vm);
+
+            ws.Cell(row, ColChinese).Value = attr?.ChineseName ?? prop.Name;
+            ws.Cell(row, ColType   ).Value = attr != null
+                ? ParseBaseType(attr.DataType)
+                : DefaultDataType(prop.PropertyType);
+            if (attr != null)
+            {
+                ws.Cell(row, ColAddrDec).Value = attr.Address;
+                ws.Cell(row, ColAddrHex).Value = $"0x{attr.Address:X4}";
+            }
+            ws.Cell(row, ColValue).Value = value?.ToString() ?? "";
+            if (attr != null)
+            {
+                if (!double.IsNaN(attr.Max)) ws.Cell(row, ColMax).Value = attr.Max;
+                if (!double.IsNaN(attr.Min)) ws.Cell(row, ColMin).Value = attr.Min;
+            }
             row++;
         }
 
+        // 斑马纹
+        for (int r = 5; r < row; r += 2)
+            ws.Range(r, 1, r, ColMin).Style.Fill.BackgroundColor = XLColor.FromHtml("#F1F5F9");
+
         ws.Columns().AdjustToContents();
-        wb.SaveAs(filePath);
+    }
+
+    /// <summary>
+    /// 从 DataType 字符串提取基础数据类型（去掉比例系数和单位）。
+    /// 例："S16×0.1 ℃" → "S16"，"U32 h" → "U32"，"float" → "float"
+    /// </summary>
+    private static string ParseBaseType(string dataType)
+    {
+        int i = dataType.IndexOfAny(['×', ' ']);
+        return i > 0 ? dataType[..i] : dataType;
+    }
+
+    /// <summary>
+    /// 优先解析十进制地址，失败时尝试十六进制（支持 "0x1009" 或 "1009" 形式）。
+    /// </summary>
+    private static bool TryParseAddress(string decStr, string hexStr, out int addr)
+    {
+        if (int.TryParse(decStr.Trim(), out addr)) return true;
+        var h = hexStr.Trim();
+        if (h.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) h = h[2..];
+        return int.TryParse(h, System.Globalization.NumberStyles.HexNumber, null, out addr);
+    }
+
+    private static bool IsExportableType(Type t) =>
+        t == typeof(double) || t == typeof(float)  || t == typeof(int)  ||
+        t == typeof(ushort) || t == typeof(uint)   || t == typeof(short);
+
+    private static string DefaultDataType(Type t)
+    {
+        if (t == typeof(double) || t == typeof(float)) return "float";
+        if (t == typeof(int)   || t == typeof(short))  return "int16";
+        if (t == typeof(ushort))                        return "uint16";
+        if (t == typeof(uint))                          return "uint32";
+        return t.Name;
     }
 
     /// <summary>
@@ -243,53 +337,161 @@ public static class ExcelHelper
     }
 
     /// <summary>
-    /// 将从站导出的设备 Excel 重新导入回对应 ViewModel（按属性名反射写值）。
-    /// 格式与 ExportDeviceViewModel 一致：第5行起，属性名|值。
+    /// 根据 Excel 文件中的 Sheet 名自动匹配设备 ViewModel。
+    /// 规则：Sheet 名与 DeviceName 完全匹配（忽略大小写）或 Sheet 名是 DeviceName 的前缀（名称被截断时）。
+    /// </summary>
+    public static DeviceViewModelBase? DetectDeviceViewModel(
+        string filePath, IEnumerable<DeviceViewModelBase> vms)
+    {
+        using var wb = new XLWorkbook(filePath);
+        foreach (var ws in wb.Worksheets)
+        {
+            var vm = vms.FirstOrDefault(v =>
+                string.Equals(v.DeviceName, ws.Name, StringComparison.OrdinalIgnoreCase) ||
+                v.DeviceName.StartsWith(ws.Name, StringComparison.OrdinalIgnoreCase));
+            if (vm != null) return vm;
+        }
+        return null;
+    }
+
+    // ----------------------------------------------------------------
+    // 剪贴板 / 文件 → 通用行解析（不做设备匹配，直接返回原始行数据）
+    // ----------------------------------------------------------------
+
+    /// <summary>
+    /// 从 TSV 剪贴板文本解析行数据，返回 (中文名, 地址, 物理值) 列表。
+    /// 地址优先读 Dec 列，失败则读 Hex 列。
+    /// 首行若为表头（首列="中文名"）则自动跳过。
+    /// </summary>
+    public static List<(string ChineseName, int Address, double Value)> ParseRowsFromClipboard(string clipboardText)
+    {
+        var result = new List<(string, int, double)>();
+        foreach (var line in clipboardText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var cols = line.Split('\t');
+            if (cols.Length < 5) continue;
+            if (cols[0].Trim() == "中文名") continue;
+            var decStr = cols[2].Trim();
+            var hexStr = cols.Length > 3 ? cols[3].Trim() : "";
+            if (!TryParseAddress(decStr, hexStr, out int addr)) continue;
+            double.TryParse(cols[4].Trim(),
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out double val);
+            result.Add((cols[0].Trim(), addr, val));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 从导出的 Excel 文件解析行数据，返回 (设备名, 行列表)。
+    /// 设备名读取第 1 行第 2 列（B1），数据行从第 5 行开始。
+    /// 地址优先读 Dec 列，失败则读 Hex 列。
+    /// </summary>
+    public static (string DeviceName, List<(string ChineseName, int Address, double Value)> Rows)
+        ParseRowsFromFile(string filePath)
+    {
+        using var wb = new XLWorkbook(filePath);
+        var ws = wb.Worksheet(1);
+
+        var deviceName = ws.Cell(1, 2).GetValue<string>().Trim();
+        if (string.IsNullOrEmpty(deviceName)) deviceName = ws.Name;
+
+        var rows = new List<(string, int, double)>();
+        int lastRow = ws.LastRowUsed()?.RowNumber() ?? 4;
+        for (int row = 5; row <= lastRow; row++)
+        {
+            var chineseName = ws.Cell(row, ColChinese).GetValue<string>().Trim();
+            var decStr      = ws.Cell(row, ColAddrDec).GetValue<string>();
+            var hexStr      = ws.Cell(row, ColAddrHex).GetValue<string>();
+            if (!TryParseAddress(decStr, hexStr, out int addr)) continue;
+            double.TryParse(ws.Cell(row, ColValue).GetValue<string>(),
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out double val);
+            rows.Add((chineseName, addr, val));
+        }
+        return (deviceName, rows);
+    }
+
+    /// <summary>
+    /// 将从站导出的设备 Excel 重新导入回对应 ViewModel。
+    /// 自动识别两种格式：
+    ///   - 新格式（第4行表头首列为"中文名"）：按 地址(Dec) 列匹配 [RegisterField] 属性，值取第5列
+    ///   - 旧格式（第4行表头首列为"属性名"）：按属性名匹配，值取第2列（向后兼容）
     /// </summary>
     public static void ImportDeviceViewModel(string filePath, DeviceViewModelBase vm)
     {
         using var wb = new XLWorkbook(filePath);
-        // 优先按设备名找 Sheet，找不到取第一个
         var sheetName = vm.DeviceName.Length > 31 ? vm.DeviceName[..31] : vm.DeviceName;
         IXLWorksheet ws;
         try { ws = wb.Worksheet(sheetName); }
         catch { ws = wb.Worksheet(1); }
 
         int lastRow = ws.LastRowUsed()?.RowNumber() ?? 4;
+        // 识别格式：检查第4行第1列表头
+        bool isNewFormat = ws.Cell(4, 1).GetValue<string>().Trim() == "中文名";
+
+        if (isNewFormat)
+            ImportNewFormat(ws, vm, lastRow);
+        else
+            ImportLegacyFormat(ws, vm, lastRow);
+
+        vm.FlushToRegisters();
+    }
+
+    /// <summary>新格式导入：按地址列（第3列）查找 [RegisterField] 标注的属性，值在第5列</summary>
+    private static void ImportNewFormat(IXLWorksheet ws, DeviceViewModelBase vm, int lastRow)
+    {
+        // 建立 address → property 索引（只包含有 [RegisterField] 特性的可写属性）
+        var addrIndex = vm.GetType().GetProperties()
+            .Where(p => p.CanWrite && IsExportableType(p.PropertyType))
+            .Select(p => (Prop: p, Attr: p.GetCustomAttribute<RegisterFieldAttribute>()))
+            .Where(x => x.Attr != null)
+            .ToDictionary(x => x.Attr!.Address, x => x.Prop);
+
+        for (int row = 5; row <= lastRow; row++)
+        {
+            var decStr = ws.Cell(row, ColAddrDec).GetValue<string>();
+            var hexStr = ws.Cell(row, ColAddrHex).GetValue<string>();
+            if (!TryParseAddress(decStr, hexStr, out int addr)) continue;
+            if (!addrIndex.TryGetValue(addr, out var prop)) continue;
+
+            SetPropertyValue(prop, vm, ws.Cell(row, ColValue).GetValue<string>());
+        }
+    }
+
+    /// <summary>旧格式导入（向后兼容）：按属性名（第1列）匹配，值在第2列</summary>
+    private static void ImportLegacyFormat(IXLWorksheet ws, DeviceViewModelBase vm, int lastRow)
+    {
         var props = vm.GetType().GetProperties()
-            .Where(p => p.CanWrite && (p.PropertyType == typeof(double)
-                                    || p.PropertyType == typeof(float)
-                                    || p.PropertyType == typeof(int)
-                                    || p.PropertyType == typeof(ushort)))
+            .Where(p => p.CanWrite && IsExportableType(p.PropertyType))
             .ToDictionary(p => p.Name);
 
-        // 数据从第 5 行开始（行1=设备名，行2=导出时间，行3=空，行4=表头）
         for (int row = 5; row <= lastRow; row++)
         {
             var nameCell = ws.Cell(row, 1);
-            var valCell  = ws.Cell(row, 2);
             if (nameCell.IsEmpty()) continue;
-
-            var propName = nameCell.GetValue<string>();
-            if (!props.TryGetValue(propName, out var prop)) continue;
-
-            var valStr = valCell.GetValue<string>();
-            try
-            {
-                object? value = prop.PropertyType == typeof(double)
-                    ? (object)(double.TryParse(valStr, System.Globalization.NumberStyles.Any,
-                                               System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0.0)
-                    : prop.PropertyType == typeof(float)
-                    ? (float.TryParse(valStr, System.Globalization.NumberStyles.Any,
-                                      System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : 0f)
-                    : prop.PropertyType == typeof(int)
-                    ? (int.TryParse(valStr, out var i) ? i : 0)
-                    : (ushort.TryParse(valStr, out var u) ? u : (ushort)0);
-                if (value != null) prop.SetValue(vm, value);
-            }
-            catch { /* 类型不匹配时跳过 */ }
+            if (!props.TryGetValue(nameCell.GetValue<string>(), out var prop)) continue;
+            SetPropertyValue(prop, vm, ws.Cell(row, 2).GetValue<string>());
         }
-        vm.FlushToRegisters();
+    }
+
+    private static void SetPropertyValue(PropertyInfo prop, object vm, string valStr)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var ns = System.Globalization.NumberStyles.Any;
+        try
+        {
+            object? value =
+                prop.PropertyType == typeof(double)  ? (double.TryParse(valStr, ns, ci, out var d)  ? d    : (object?)null) :
+                prop.PropertyType == typeof(float)   ? (float .TryParse(valStr, ns, ci, out var f)  ? f    : (object?)null) :
+                prop.PropertyType == typeof(int)     ? (int   .TryParse(valStr, out var i)           ? i    : (object?)null) :
+                prop.PropertyType == typeof(short)   ? (short .TryParse(valStr, out var s)           ? s    : (object?)null) :
+                prop.PropertyType == typeof(ushort)  ? (ushort.TryParse(valStr, out var us)          ? us   : (object?)null) :
+                prop.PropertyType == typeof(uint)    ? (uint  .TryParse(valStr, out var ui)          ? ui   : (object?)null) :
+                null;
+            if (value != null) prop.SetValue(vm, value);
+        }
+        catch { /* 类型不匹配时静默跳过 */ }
     }
 
     // ----------------------------------------------------------------

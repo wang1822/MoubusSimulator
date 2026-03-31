@@ -13,6 +13,12 @@ public class RegisterBank
     private readonly ushort[] _regs = new ushort[65536];
     private readonly object _lock = new();
 
+    /// <summary>
+    /// 每次写寄存器后触发，参数为（地址, 新值）。
+    /// 从站服务订阅此事件，将变更同步到 NModbus4 DataStore。
+    /// </summary>
+    public event Action<int, ushort>? OnRegisterWritten;
+
     // ----------------------------------------------------------------
     // 基础读写
     // ----------------------------------------------------------------
@@ -29,6 +35,7 @@ public class RegisterBank
     {
         ValidateAddress(address);
         lock (_lock) { _regs[address] = value; }
+        OnRegisterWritten?.Invoke(address, value);
     }
 
     /// <summary>读取连续多个寄存器</summary>
@@ -54,6 +61,8 @@ public class RegisterBank
         {
             Array.Copy(values, 0, _regs, startAddress, values.Length);
         }
+        for (int i = 0; i < values.Length; i++)
+            OnRegisterWritten?.Invoke(startAddress + i, values[i]);
     }
 
     // ----------------------------------------------------------------
@@ -73,6 +82,8 @@ public class RegisterBank
             _regs[address]     = hi;
             _regs[address + 1] = lo;
         }
+        OnRegisterWritten?.Invoke(address,     hi);
+        OnRegisterWritten?.Invoke(address + 1, lo);
     }
 
     /// <summary>读取 float32（AB CD 大端字序）</summary>
@@ -91,11 +102,15 @@ public class RegisterBank
     public void WriteUInt32(int address, uint value)
     {
         ValidateAddress(address + 1);
+        ushort hi = (ushort)(value >> 16);
+        ushort lo = (ushort)(value & 0xFFFF);
         lock (_lock)
         {
-            _regs[address]     = (ushort)(value >> 16);
-            _regs[address + 1] = (ushort)(value & 0xFFFF);
+            _regs[address]     = hi;
+            _regs[address + 1] = lo;
         }
+        OnRegisterWritten?.Invoke(address,     hi);
+        OnRegisterWritten?.Invoke(address + 1, lo);
     }
 
     /// <summary>写入 int16（有符号 16 位）</summary>
@@ -103,6 +118,7 @@ public class RegisterBank
     {
         ValidateAddress(address);
         lock (_lock) { _regs[address] = (ushort)value; }
+        OnRegisterWritten?.Invoke(address, (ushort)value);
     }
 
     /// <summary>写入 uint8（低 8 位有效）</summary>
@@ -110,6 +126,7 @@ public class RegisterBank
     {
         ValidateAddress(address);
         lock (_lock) { _regs[address] = value; }
+        OnRegisterWritten?.Invoke(address, value);
     }
 
     // ----------------------------------------------------------------
@@ -142,6 +159,15 @@ public class RegisterBank
     // ----------------------------------------------------------------
     // 工具
     // ----------------------------------------------------------------
+
+    /// <summary>
+    /// 将全部 65536 个寄存器清零（不触发 OnRegisterWritten 事件）。
+    /// 在从站启动前调用，确保未启用设备的旧数据不被 NModbus4 DataStore 读取。
+    /// </summary>
+    public void ClearAll()
+    {
+        lock (_lock) { Array.Clear(_regs, 0, _regs.Length); }
+    }
 
     private static void ValidateAddress(int address)
     {

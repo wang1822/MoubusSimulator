@@ -25,6 +25,30 @@ public abstract partial class DeviceViewModelBase : ObservableObject
     [ObservableProperty]
     private bool _isExpanded;
 
+    /// <summary>
+    /// 是否启用此设备：勾选后启动监听时寄存器才写入，定时自动模拟才运行，
+    /// 导出快照/设备 Excel 时才包含此设备。
+    /// </summary>
+    [ObservableProperty]
+    private bool _isSimulating = false;
+
+    /// <summary>
+    /// 勾选 → 立刻将当前字段值刷入 RegisterBank；
+    /// 取消勾选 → 立刻将该设备的寄存器范围清零，
+    /// 确保 EMS 在监听期间读取到全 0 而不是残留数据。
+    /// </summary>
+    partial void OnIsSimulatingChanged(bool value)
+    {
+        if (value)
+        {
+            FlushToRegisters();
+        }
+        else if (Model.RegisterCount > 0)
+        {
+            _bank.WriteRange(Model.BaseAddress, new ushort[Model.RegisterCount]);
+        }
+    }
+
     /// <summary>设备中文名（显示在左侧列表和 Expander 标题）</summary>
     public abstract string DeviceName { get; }
 
