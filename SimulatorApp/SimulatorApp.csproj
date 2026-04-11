@@ -31,6 +31,8 @@
     <PackageReference Include="NLog.Extensions.Logging" Version="5.3.14" />
     <!-- Excel 导入/导出（MIT License） -->
     <PackageReference Include="ClosedXML" Version="0.102.3" />
+    <!-- SQL Server ADO.NET 驱动（主站数据库） -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <!-- .NET 8 需要显式引用串口支持 -->
     <PackageReference Include="System.IO.Ports" Version="8.0.0" />
   </ItemGroup>
