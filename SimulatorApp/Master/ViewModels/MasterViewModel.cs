@@ -3,121 +3,224 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using SimulatorApp.Master.Models;
 using SimulatorApp.Master.Services;
+using SimulatorApp.Master.Views;
+using PasswordDialog = SimulatorApp.Master.Views.PasswordDialog;
 using SimulatorApp.Shared.Helpers;
 using SimulatorApp.Shared.Logging;
 using SimulatorApp.Shared.Models;
 using System.Collections.ObjectModel;
 using System.IO.Ports;
+using System.Net.NetworkInformation;
 using System.Windows;
 using System.Windows.Threading;
 
 namespace SimulatorApp.Master.ViewModels;
 
 /// <summary>
-/// 主站 ViewModel — 连接配置、轮询数据展示、写寄存器操作
+/// 主站 ViewModel。
+/// 职责：DB 连接 → 站点管理 → Modbus 连接 → 轮询（多地址段）→ 遥测/遥控显示。
+/// 使用 [ObservableProperty] 的类必须是 partial class。
 /// </summary>
 public partial class MasterViewModel : ObservableObject
 {
-    // ----------------------------------------------------------------
-    // 连接参数
-    // ----------------------------------------------------------------
+    // ── DB 连接 ───────────────────────────────────────────────────────────
+    [ObservableProperty]
+    private string _dbConnectionString =
+        "Server=localhost;Database=ModBusT;Trusted_Connection=True;TrustServerCertificate=True;";
 
+    [ObservableProperty] private bool   _isDbConnected = false;
+    [ObservableProperty] private string _dbStatusText  = "未连接数据库";
+
+    // ── 站点列表 ──────────────────────────────────────────────────────────
+    public ObservableCollection<MasterStation> Stations { get; } = new();
+
+
+    // CommunityToolkit.Mvvm 的源码生成写法：
+    // [ObservableProperty] private MasterStation? _selectedStation;
+    //
+    // 编译后会自动生成等价属性：
+    // public MasterStation? SelectedStation
+    // {
+    //     get => _selectedStation;
+    //     set => SetProperty(ref _selectedStation, value);
+    // }
+    // 绑定界面中的选择设备站点SelectedStation，选中后自动回填连接参数并加载寄存器配置。
+    [ObservableProperty] private MasterStation? _selectedStation;
+    // 绑定界面中的编辑设备站点名称SelectedStationEditName。
+    [ObservableProperty] private string _selectedStationEditName = string.Empty;
+    // [ObservableProperty] private MasterStation? _selectedStation; 生成 SelectedStation 属性。
+    public bool HasSelectedStation => SelectedStation != null;
+
+    // 钩子，SelectedStation发生变化时自动回填连接参数并加载寄存器配置
+    partial void OnSelectedStationChanged(MasterStation? value)
+    {
+        OnPropertyChanged(nameof(HasSelectedStation));
+        if (value == null) return;
+        SelectedStationEditName = value.Name;
+        // 自动回填连接参数
+        Protocol       = (ProtocolType)value.Protocol;
+        RemoteHost     = value.Host;
+        RemotePort     = value.Port;
+        ComPort        = value.PortName;
+        BaudRate       = value.BaudRate;
+        SlaveId        = value.SlaveId;
+        PollIntervalMs = value.PollIntervalMs;
+        // 异步加载寄存器配置
+        _ = LoadRegisterConfigsAsync(value.Id);
+    }
+
+    // 钩子，SelectedStationEditName 发生变化时自动写回 SelectedStation.Name 并更新 DB（如果连接了 DB 且 站点已保存）
+    partial void OnSelectedStationEditNameChanged(string value)
+    {
+        if (SelectedStation == null || string.IsNullOrWhiteSpace(value)) return;
+        if (value == SelectedStation.Name) return;
+        SelectedStation.Name = value;
+        if (_dbService != null && SelectedStation.Id > 0)
+            _ = _dbService.UpdateStationNameAsync(SelectedStation.Id, value);
+    }
+
+    // ── Modbus 连接参数 ───────────────────────────────────────────────────
     [ObservableProperty] private ProtocolType _protocol       = ProtocolType.Tcp;
     [ObservableProperty] private string  _remoteHost          = "127.0.0.1";
     [ObservableProperty] private int     _remotePort          = 502;
     [ObservableProperty] private byte    _slaveId             = 1;
     [ObservableProperty] private string  _comPort             = "COM3";
     [ObservableProperty] private int     _baudRate            = 9600;
-    [ObservableProperty] private int     _startAddress        = 7296;
-    [ObservableProperty] private int     _quantity            = 100;
     [ObservableProperty] private int     _pollIntervalMs      = 1000;
 
-    // 协议模式辅助属性（用于 XAML 显示/隐藏）
     public bool IsTcpMode => Protocol == ProtocolType.Tcp;
     public bool IsRtuMode => Protocol == ProtocolType.Rtu;
-
     partial void OnProtocolChanged(ProtocolType value)
     {
         OnPropertyChanged(nameof(IsTcpMode));
         OnPropertyChanged(nameof(IsRtuMode));
     }
 
-    // ----------------------------------------------------------------
-    // 运行状态
-    // ----------------------------------------------------------------
+    // ── API 比对配置 ──────────────────────────────────────────────────
+    [ObservableProperty] private string _apiUrl           = string.Empty;
+    [ObservableProperty] private string _apiAuthorization = string.Empty;
+    [ObservableProperty] private double _verifyTolerance  = 0.5;
+    [ObservableProperty] private string _verifyStatusText = string.Empty;
+    [ObservableProperty] private int    _verifyFailCount  = 0;
 
-    [ObservableProperty] private bool   _isConnected         = false;
-    [ObservableProperty] private string _statusText          = "未连接";
-    [ObservableProperty] private long   _pollCount           = 0;
+    // ── 连接状态 ──────────────────────────────────────────────────────────
+    [ObservableProperty] private bool   _isConnected = false;
+    [ObservableProperty] private string _statusText  = "未连接";
+    [ObservableProperty] private long   _pollCount   = 0;
 
-    // ----------------------------------------------------------------
-    // 写寄存器操作（单个）
-    // ----------------------------------------------------------------
+    // ── 显示数据 ──────────────────────────────────────────────────────────
+    /// <summary>遥测行（只读显示）</summary>
+    public ObservableCollection<RegisterDisplayRow> TelemeterRows { get; } = new();
+    /// <summary>遥控行（可写入）</summary>
+    public ObservableCollection<RegisterDisplayRow> ControlRows   { get; } = new();
 
-    [ObservableProperty] private int    _writeAddress        = 0;
-    [ObservableProperty] private ushort _writeValue          = 0;
+    [ObservableProperty] private int _activeTabIndex = 0; // 0=遥测 1=遥控
+    partial void OnActiveTabIndexChanged(int value)
+    {
+        _searchMatchIndex     = -1;
+        _unverifiedMatchIndex = -1;
+    }
 
-    // ----------------------------------------------------------------
-    // 轮询数据表格
-    // ----------------------------------------------------------------
+    // ── 搜索 / 定位未通过 ──────────────────────────────────────────────────
+    [ObservableProperty] private string _searchText = string.Empty;
+    private int _searchMatchIndex     = -1;
+    private int _unverifiedMatchIndex = -1;
+    /// <summary>通知 code-behind 滚动到指定行（避免 ViewModel 直接引用 View）</summary>
+    public event Action<RegisterDisplayRow>? ScrollRequested;
 
-    public ObservableCollection<RegisterRow> Registers { get; } = new();
-
-    // ----------------------------------------------------------------
-    // 日志
-    // ----------------------------------------------------------------
-
+    // ── 日志 ────────────────────────────────────────────────────────────
     public ObservableCollection<LogEntry> LogEntries { get; } = new();
 
-    // ----------------------------------------------------------------
-    // 串口列表（RTU 模式）
-    // ----------------------------------------------------------------
-
+    // ── 辅助 ─────────────────────────────────────────────────────────────
     public ObservableCollection<string> AvailableComPorts { get; } = new();
+    /// <summary>本机可用 IP 地址列表（含 127.0.0.1 及所有活跃网卡 IPv4）</summary>
+    public ObservableCollection<string> AvailableHosts    { get; } = new();
     public IReadOnlyList<int> BaudRateOptions { get; } = new[] { 4800, 9600, 19200, 38400, 115200 };
-
-    // 协议下拉选项
     public IReadOnlyList<ComboItem<ProtocolType>> ProtocolItems { get; } = new List<ComboItem<ProtocolType>>
     {
-        new("TCP",  ProtocolType.Tcp),
-        new("RTU",  ProtocolType.Rtu),
+        new("TCP", ProtocolType.Tcp),
+        new("RTU", ProtocolType.Rtu),
     };
 
-    // ----------------------------------------------------------------
-    // 私有成员
-    // ----------------------------------------------------------------
-
-    private IMasterService? _service;
+    // ── 私有成员 ──────────────────────────────────────────────────────────
+    private IMasterService?    _service;
+    private IMasterDbService?  _dbService;
     private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _syncCts;   // 绿点 DB 同步循环独立 CTS
+    private Task?              _pollTask;
+    private List<PollGroup>    _pollGroups = new();
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
 
-    public MasterViewModel() => RefreshComPorts();
+    /// <summary>无 DB 连接时的内存临时站点（key = 临时负数 ID）</summary>
+    private readonly Dictionary<int, (MasterStation Station, List<MasterRegisterConfig> Configs)>
+        _inMemoryStations = new();
+    private int _nextTempId = -1;
 
-    // ----------------------------------------------------------------
-    // 命令：连接 / 断开
-    // ----------------------------------------------------------------
+    public MasterViewModel()
+    {
+        RefreshComPorts();
+        RefreshAvailableHosts();
+    }
+
+    // ====================================================================
+    // 命令：DB 连接
+    // ====================================================================
+
+    [RelayCommand]
+    public async Task ConnectDbAsync()
+    {
+        if (string.IsNullOrWhiteSpace(DbConnectionString))
+        {
+            DbStatusText = "请输入连接字符串";
+            return;
+        }
+        try
+        {
+            DbStatusText  = "连接中...";
+            _dbService    = new MasterDbService(DbConnectionString);
+            await _dbService.InitializeAsync();
+            IsDbConnected = true;
+            DbStatusText  = "数据库已连接";
+            AddLog(LogLevel.Info, "数据库连接成功，表已初始化");
+            await LoadStationsAsync();
+        }
+        catch (Exception ex)
+        {
+            IsDbConnected = false;
+            DbStatusText  = $"DB 连接失败：{ex.Message}";
+            AddLog(LogLevel.Error, $"DB 连接失败：{ex.Message}");
+        }
+    }
+
+    // ====================================================================
+    // 命令：Modbus 连接/断开
+    // ====================================================================
 
     [RelayCommand]
     public async Task ConnectAsync()
     {
         if (IsConnected) return;
+        // 遥测行（_pollGroups）和遥控行都为空才算真正没有配置
+        if (_pollGroups.Count == 0 && ControlRows.Count == 0)
+        {
+            AddLog(LogLevel.Warn, "当前站点无寄存器配置，请先选择站点或保存配置");
+            return;
+        }
         try
         {
             var endpoint = BuildEndpoint();
+            _service = Protocol == ProtocolType.Tcp ? new TcpMasterService() : (IMasterService)new RtuMasterService();
+
             _cts = new CancellationTokenSource();
-            _service = Protocol == ProtocolType.Tcp
-                ? new TcpMasterService()
-                : new RtuMasterService();
-
-            _service.OnPollCompleted += OnPollCompleted;
-            _service.OnError        += OnServiceError;
-
-            await _service.ConnectAndStartPollingAsync(endpoint, _cts.Token);
+            await _service.ConnectAsync(endpoint, _cts.Token);
             IsConnected = true;
             StatusText  = Protocol == ProtocolType.Tcp
                 ? $"已连接 {RemoteHost}:{RemotePort}"
                 : $"已连接 {ComPort}@{BaudRate}";
             AddLog(LogLevel.Info, StatusText);
+            // 用 Task.Run 将轮询循环推到线程池，避免 Dispatcher 同步上下文捕获
+            // 导致 SlaveException 沿 async 状态机在 UI 线程上重新抛出并触发全局 Dialog
+            _pollTask = Task.Run(() => PollLoopAsync(_cts.Token));
         }
         catch (Exception ex)
         {
@@ -133,6 +236,12 @@ public partial class MasterViewModel : ObservableObject
     {
         if (!IsConnected || _service == null) return;
         _cts?.Cancel();
+        if (_pollTask != null)
+        {
+            try { await _pollTask; }
+            catch (OperationCanceledException) { /* 正常取消，忽略 */ }
+            catch (Exception) { /* 轮询内部已记录，此处忽略 */ }
+        }
         await _service.DisconnectAsync();
         await _service.DisposeAsync();
         _service    = null;
@@ -141,10 +250,6 @@ public partial class MasterViewModel : ObservableObject
         AddLog(LogLevel.Info, "主站已断开连接");
     }
 
-    // ----------------------------------------------------------------
-    // 命令：切换连接（XAML 绑定到 ToggleMasterCommand）
-    // ----------------------------------------------------------------
-
     [RelayCommand]
     public async Task ToggleMasterAsync()
     {
@@ -152,32 +257,340 @@ public partial class MasterViewModel : ObservableObject
         else             await ConnectAsync();
     }
 
-    // ----------------------------------------------------------------
-    // 命令：写单个寄存器
-    // ----------------------------------------------------------------
+    // ====================================================================
+    // 命令：站点管理
+    // ====================================================================
+
+    /// <summary>新建配置：始终打开空白对话框，不预填任何站点数据</summary>
+    [RelayCommand]
+    public async Task NewStationAsync()
+    {
+        var vm = new SaveStationDialogViewModel();
+        await OpenStationDialogAsync(vm);
+    }
+
+    /// <summary>编辑配置：预填当前选中站点的数据</summary>
+    [RelayCommand]
+    public async Task OpenSaveStationDialogAsync()
+    {
+        var vm = new SaveStationDialogViewModel();
+
+        if (SelectedStation != null)
+        {
+            List<MasterRegisterConfig> existingConfigs;
+            if (SelectedStation.Id < 0
+                && _inMemoryStations.TryGetValue(SelectedStation.Id, out var mem))
+            {
+                existingConfigs = mem.Configs;
+            }
+            else if (_dbService != null)
+            {
+                existingConfigs = await _dbService.GetRegisterConfigsAsync(SelectedStation.Id);
+            }
+            else
+            {
+                existingConfigs = new List<MasterRegisterConfig>();
+            }
+            vm.LoadFromStation(SelectedStation, existingConfigs);
+        }
+
+        await OpenStationDialogAsync(vm);
+    }
+
+    private Task OpenStationDialogAsync(SaveStationDialogViewModel vm)
+    {
+        var dlg = new SaveStationDialog(vm)
+        {
+            Owner = Application.Current.MainWindow
+        };
+        dlg.ShowDialog();
+
+        if (!vm.DialogResult) return Task.CompletedTask;
+
+        var (station, configs) = vm.BuildResult();
+
+        // 编辑模式：名称未改则保留原 ID
+        if (SelectedStation != null && vm.StationName == SelectedStation.Name)
+            station.Id = SelectedStation.Id;
+
+        _ = SaveStationToDbAsync(station, configs);
+        return Task.CompletedTask;
+    }
 
     [RelayCommand]
-    public async Task WriteRegisterAsync()
+    public async Task DeleteStationAsync()
     {
-        if (_service == null || !IsConnected)
+        if (SelectedStation == null) return;
+        if (!VerifyPassword())
+        {
+            AddLog(LogLevel.Warn, "密码错误，取消删除操作");
+            return;
+        }
+        var name = SelectedStation.Name;
+        var id   = SelectedStation.Id;
+
+        if (id < 0)
+        {
+            // 内存临时站点
+            _inMemoryStations.Remove(id);
+            AddLog(LogLevel.Info, $"已删除临时站点：{name}");
+        }
+        else if (_dbService != null)
+        {
+            await _dbService.DeleteStationAsync(id);
+            AddLog(LogLevel.Info, $"已删除站点：{name}");
+        }
+        else
+        {
+            AddLog(LogLevel.Warn, "无法删除：数据库未连接");
+            return;
+        }
+        await LoadStationsAsync();
+    }
+
+    // ====================================================================
+    // 命令：清除绿点
+    // ====================================================================
+
+    [RelayCommand]
+    public async Task ClearVerifiedAsync()
+    {
+        if (!VerifyPassword())
+        {
+            AddLog(LogLevel.Warn, "密码错误，取消清除操作");
+            return;
+        }
+
+        foreach (var row in TelemeterRows.Concat(ControlRows))
+            row.IsVerified = false;
+
+        VerifyFailCount = TelemeterRows.Count + ControlRows.Count;
+
+        if (_dbService != null && SelectedStation?.Id > 0)
+        {
+            try
+            {
+                await _dbService.ClearAllIsVerifiedAsync(SelectedStation.Id);
+                AddLog(LogLevel.Info, $"已清除站点「{SelectedStation.Name}」所有绿点标记");
+            }
+            catch (Exception ex)
+            {
+                AddLog(LogLevel.Warn, $"DB 清除绿点失败：{ex.Message}");
+            }
+        }
+        else
+        {
+            AddLog(LogLevel.Info, "已清除当前视图所有绿点标记（内存模式）");
+        }
+    }
+
+    // ====================================================================
+    // 命令：遥控写入
+    // ====================================================================
+
+    [RelayCommand]
+    public async Task WriteControlRowAsync(RegisterDisplayRow row)
+    {
+        if (!IsConnected || _service == null)
         {
             MessageBox.Show("请先连接从站", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+        if (!double.TryParse(row.WriteValue, out double physVal))
+        {
+            AddLog(LogLevel.Error, $"写入值格式错误：\"{row.WriteValue}\"  [{row.ChineseName}]");
+            return;
+        }
+
         try
         {
-            await _service.WriteSingleRegisterAsync(WriteAddress, WriteValue);
-            AddLog(LogLevel.Info, $"FC06 写寄存器  addr={WriteAddress}  value={WriteValue}");
+            ushort[] regs = BuildWriteRegisters(row, physVal);
+            if (regs.Length == 1)
+            {
+                await _service.WriteSingleRegisterAsync(row.StartAddress, regs[0]);
+                AddLog(LogLevel.Info,
+                    $"FC06  addr={row.StartAddress}  raw=0x{regs[0]:X4}" +
+                    $"  [{row.ChineseName}]={physVal}{row.Unit}");
+            }
+            else
+            {
+                await _service.WriteMultipleRegistersAsync(row.StartAddress, regs);
+                string hexStr = string.Join(" ", regs.Select(r => $"0x{r:X4}"));
+                AddLog(LogLevel.Info,
+                    $"FC16  addr={row.StartAddress}  raw=[{hexStr}]" +
+                    $"  [{row.ChineseName}]={physVal}{row.Unit}");
+            }
+
+            // 写入成功后：① 立即把写入值显示到"当前值"列（不等下一个轮询周期）
+            row.UpdateFromRaw(regs);
+            // ② 再尝试从从站回读确认（若地址不可读则静默跳过，显示值已由①更新）
+            await ReadBackControlRowAsync(row);
         }
         catch (Exception ex)
         {
-            AddLog(LogLevel.Error, $"写寄存器失败：{ex.Message}");
+            AddLog(LogLevel.Error, $"写入失败 [{row.ChineseName}]：{ex.Message}");
         }
     }
 
-    // ----------------------------------------------------------------
-    // 命令：刷新串口列表
-    // ----------------------------------------------------------------
+    /// <summary>
+    /// 写入成功后回读寄存器，更新遥控行的"原始寄存器/当前值/更新时间"。
+    /// FC03 读失败（SlaveException）时静默忽略，不影响写入流程。
+    /// </summary>
+    private async Task ReadBackControlRowAsync(RegisterDisplayRow row)
+    {
+        if (_service == null) return;
+        try
+        {
+            var readBack = await _service.ReadRegistersAsync(row.StartAddress, row.Quantity);
+            row.UpdateFromRaw(readBack);    // RelayCommand 在 UI 线程，可直接调用
+        }
+        catch { /* 回读失败：从站不支持 FC03 读该地址，忽略 */ }
+    }
+
+    /// <summary>
+    /// 将物理值按 DataType 逆算为寄存器数组（含比例系数和偏置还原）。
+    /// float/int32/uint32 → 2 个寄存器（高字在前，AB CD 字序）。
+    /// int16/uint16       → 1 个寄存器。
+    /// </summary>
+    private static ushort[] BuildWriteRegisters(RegisterDisplayRow row, double physVal)
+    {
+        double raw = (physVal - row.Offset) / row.ScaleFactor;
+        return row.DataType.ToLowerInvariant() switch
+        {
+            "float"  => FloatToRegs((float)raw),
+            "uint32" => SplitU32((uint)Math.Round(raw)),
+            "int32"  => SplitU32((uint)(int)Math.Round(raw)),
+            "int16"  => new ushort[] { (ushort)(short)Math.Round(raw) },
+            _        => new ushort[] { (ushort)Math.Round(raw) }    // uint16
+        };
+    }
+
+    private static ushort[] FloatToRegs(float v)
+    {
+        var (h, l) = FloatRegisterHelper.ToRegisters(v);
+        return new ushort[] { h, l };
+    }
+
+    private static ushort[] SplitU32(uint v)
+        => new ushort[] { (ushort)(v >> 16), (ushort)(v & 0xFFFF) };
+
+    // ====================================================================
+    // 命令：API 比对
+    // ====================================================================
+
+    [RelayCommand]
+    public void ToggleVerifyRow(RegisterDisplayRow? row)
+    {
+        if (row == null) return;
+        row.IsVerified = !row.IsVerified;
+        if (_dbService != null && row.RegisterConfigId > 0)
+            _ = _dbService.UpdateIsVerifiedAsync(row.RegisterConfigId, row.IsVerified);
+    }
+
+    [RelayCommand]
+    public async Task VerifyOnceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ApiUrl))
+        {
+            AddLog(LogLevel.Warn, "请先填写 API 地址");
+            return;
+        }
+        await RunVerifyAsync(CancellationToken.None);
+    }
+
+    // ====================================================================
+    // 命令：搜索 / 定位未通过
+    // ====================================================================
+
+    [RelayCommand]
+    public void SearchNext()
+    {
+        var keyword = SearchText.Trim();
+        if (string.IsNullOrEmpty(keyword)) return;
+        var lk = keyword.ToLower();
+        var source = GetActiveRows();
+        if (source.Count == 0) return;
+
+        int start = (_searchMatchIndex + 1) % source.Count;
+        int found = -1;
+        for (int i = 0; i < source.Count; i++)
+        {
+            int idx = (start + i) % source.Count;
+            var row = source[idx];
+            if ((row.ChineseName?.ToLower().Contains(lk) == true) ||
+                (row.VariableName?.ToLower().Contains(lk) == true))
+            {
+                found = idx;
+                break;
+            }
+        }
+        if (found >= 0)
+        {
+            _searchMatchIndex = found;
+            ScrollRequested?.Invoke(source[found]);
+        }
+        else
+        {
+            AddLog(LogLevel.Info,
+                $"未找到「{keyword}」（{(ActiveTabIndex == 0 ? "遥测" : "遥控")}，共 {source.Count} 行）");
+        }
+    }
+
+    [RelayCommand]
+    public void NextUnverified()
+    {
+        var source = GetActiveRows();
+        if (source.Count == 0) return;
+
+        int start = (_unverifiedMatchIndex + 1) % source.Count;
+        int found = -1;
+        for (int i = 0; i < source.Count; i++)
+        {
+            int idx = (start + i) % source.Count;
+            if (!source[idx].IsVerified)
+            {
+                found = idx;
+                break;
+            }
+        }
+        if (found >= 0)
+        {
+            _unverifiedMatchIndex = found;
+            ScrollRequested?.Invoke(source[found]);
+        }
+        else
+        {
+            AddLog(LogLevel.Info,
+                $"{(ActiveTabIndex == 0 ? "遥测" : "遥控")} 所有行均已通过验证");
+        }
+    }
+
+    private List<RegisterDisplayRow> GetActiveRows()
+        => ActiveTabIndex == 0 ? TelemeterRows.ToList() : ControlRows.ToList();
+
+    // ====================================================================
+    // 命令：导出/刷新/清空
+    // ====================================================================
+
+    [RelayCommand]
+    public void ExportPollData()
+    {
+        var dlg = new SaveFileDialog
+        {
+            Filter   = "Excel 文件|*.xlsx",
+            FileName = $"主站轮询数据_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
+        };
+        if (dlg.ShowDialog() != true) return;
+        try
+        {
+            ExportToExcel(dlg.FileName);
+            AddLog(LogLevel.Info, $"导出成功 → {dlg.FileName}");
+        }
+        catch (Exception ex)
+        {
+            AddLog(LogLevel.Error, $"导出失败：{ex.Message}");
+        }
+    }
 
     [RelayCommand]
     public void RefreshComPorts()
@@ -189,136 +602,479 @@ public partial class MasterViewModel : ObservableObject
             ComPort = AvailableComPorts[0];
     }
 
-    // ----------------------------------------------------------------
-    // 命令：导入设备 Excel 模板（配置轮询地址/描述）
-    // ----------------------------------------------------------------
-
     [RelayCommand]
-    public void ImportDeviceExcel()
+    public void RefreshAvailableHosts()
     {
-        var dlg = new OpenFileDialog
-        {
-            Filter = "Excel 文件|*.xlsx;*.xls",
-            Title  = "选择主站轮询数据 Excel（可导入本站之前导出的文件）"
-        };
-        if (dlg.ShowDialog() != true) return;
-
+        AvailableHosts.Clear();
+        AvailableHosts.Add("127.0.0.1");
         try
         {
-            var rows = ExcelHelper.ImportPollData(dlg.FileName);
-            Registers.Clear();
-            foreach (var (addr, desc, rawVal) in rows)
-                Registers.Add(new RegisterRow { Address = addr, Description = desc, RawValue = rawVal });
-            AddLog(LogLevel.Info, $"导入成功，共 {Registers.Count} 行");
+            foreach (var iface in NetworkInterface.GetAllNetworkInterfaces()
+                .Where(i => i.OperationalStatus == OperationalStatus.Up
+                         && i.NetworkInterfaceType != NetworkInterfaceType.Loopback))
+            {
+                foreach (var addr in iface.GetIPProperties().UnicastAddresses
+                    .Where(a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))
+                {
+                    var ip = addr.Address.ToString();
+                    if (!AvailableHosts.Contains(ip))
+                        AvailableHosts.Add(ip);
+                }
+            }
         }
         catch (Exception ex)
         {
-            AddLog(LogLevel.Error, $"导入失败：{ex.Message}");
+            AddLog(LogLevel.Warn, $"枚举本机 IP 失败：{ex.Message}");
         }
+        if (!AvailableHosts.Contains(RemoteHost))
+            AvailableHosts.Add(RemoteHost);
     }
-
-    // ----------------------------------------------------------------
-    // 命令：导出当前轮询数据到 Excel
-    // ----------------------------------------------------------------
-
-    [RelayCommand]
-    public void ExportPollData()
-    {
-        var dlg = new SaveFileDialog
-        {
-            Filter   = "Excel 文件|*.xlsx",
-            FileName = $"主站轮询数据_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
-        };
-        if (dlg.ShowDialog() != true) return;
-
-        try
-        {
-            ExcelHelper.ExportDeviceData(dlg.FileName, Registers.Select(r =>
-                (r.Address, r.Description, r.RawValue, r.HexValue, r.PhysicalValue, r.LastUpdated)));
-            AddLog(LogLevel.Info, $"导出成功 → {dlg.FileName}");
-        }
-        catch (Exception ex)
-        {
-            AddLog(LogLevel.Error, $"导出失败：{ex.Message}");
-        }
-    }
-
-    // ----------------------------------------------------------------
-    // 命令：清空日志
-    // ----------------------------------------------------------------
 
     [RelayCommand]
     public void ClearLog() => LogEntries.Clear();
 
-    // ----------------------------------------------------------------
-    // 轮询数据回调
-    // ----------------------------------------------------------------
+    // ====================================================================
+    // 轮询循环（由 MasterViewModel 驱动，不在 Service 内）
+    // ====================================================================
 
-    private void OnPollCompleted(IReadOnlyDictionary<int, ushort> data)
+    private async Task PollLoopAsync(CancellationToken ct)
     {
-        _dispatcher.InvokeAsync(() =>
+        while (!ct.IsCancellationRequested)
         {
-            PollCount++;
+            try
+            {
+                // 快照：防止 LoadRegisterConfigsAsync 在轮询途中替换 _pollGroups
+                var groups = _pollGroups;
+                foreach (var group in groups)
+                {
+                    ushort[]? regs = null;
+                    try
+                    {
+                        regs = await _service!.ReadRegistersAsync(group.StartAddress, group.Length)
+                                              .ConfigureAwait(false);
+                    }
+                    catch (Exception pollEx) when (pollEx is not OperationCanceledException)
+                    {
+                        // 若连接已断（master 已释放）则重新抛出，让外层 catch 走断开流程
+                        if (_service?.IsConnected != true) throw;
 
-            // 若已有模板行，更新已有行
-            if (Registers.Count > 0)
-            {
-                foreach (var row in Registers)
-                {
-                    if (data.TryGetValue(row.Address, out var val))
-                        row.RawValue = val;
+                        // 连接仍在线：SlaveException / 临时超时 / 地址越界等轮询级异常
+                        // ——不能用 catch(Modbus.SlaveException) 做精确匹配，
+                        //   因为 NModbus4 程序集版本差异可能导致运行时类型不匹配而逃逸到全局 Dialog
+                        int    addr    = group.StartAddress;
+                        int    len     = group.Length;
+                        string exType  = pollEx.GetType().Name;
+                        string exMsg   = pollEx.Message;
+                        _dispatcher.InvokeAsync(() =>
+                            AddLog(LogLevel.Warn,
+                                $"轮询跳过 addr={addr} len={len}  [{exType}] {exMsg}"));
+                        continue;
+                    }
+
+                    // fire-and-forget：轮询在线程池运行，UI 更新 post 到 Dispatcher 后立即继续下一组
+                    // ReferenceEquals 检测 groups 是否已过期（切站点时会替换 _pollGroups）
+                    var capturedRegs  = regs!;
+                    var capturedGroup = group;
+                    _dispatcher.InvokeAsync(() =>
+                    {
+                        if (!ReferenceEquals(_pollGroups, groups)) return;
+                        foreach (var row in capturedGroup.Rows)
+                        {
+                            int offset = row.StartAddress - capturedGroup.StartAddress;
+                            int end    = offset + row.Quantity;
+                            if (offset >= 0 && end <= capturedRegs.Length)
+                                row.UpdateFromRaw(capturedRegs[offset..end]);
+                        }
+                        PollCount++;
+                    });
+
+                    AppLogger.ModbusRequest(0x03, group.StartAddress, group.Length,
+                        SlaveId, $"{RemoteHost}:{RemotePort}");
                 }
+
+                await Task.Delay(PollIntervalMs, ct).ConfigureAwait(false);
             }
-            else
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
             {
-                // 没有模板时，动态展示所有轮询到的地址
-                foreach (var (addr, val) in data)
+                _dispatcher.InvokeAsync(() =>
                 {
-                    var existing = Registers.FirstOrDefault(r => r.Address == addr);
-                    if (existing != null)
-                        existing.RawValue = val;
-                    else
-                        Registers.Add(new RegisterRow { Address = addr, RawValue = val });
-                }
+                    IsConnected = false;
+                    StatusText  = $"通信异常：{ex.Message}";
+                    AddLog(LogLevel.Error, $"通信异常：{ex.Message}");
+                });
+                break;
             }
-        });
+        }
     }
 
-    private void OnServiceError(Exception ex)
+    // ====================================================================
+    // API 比对（私有）
+    // ====================================================================
+
+    private async Task RunVerifyAsync(CancellationToken ct)
     {
-        _dispatcher.InvokeAsync(() =>
+        try
         {
-            IsConnected = false;
-            StatusText  = $"通信异常：{ex.Message}";
-            AddLog(LogLevel.Error, $"通信异常：{ex.Message}");
-        });
+            var apiData = await ApiVerifyService.FetchNumericFieldsAsync(ApiUrl, ApiAuthorization, ct);
+
+            var snapshot = await _dispatcher.InvokeAsync(() =>
+                TelemeterRows.Concat(ControlRows)
+                             .Select(r => (row: r, varName: r.VariableName, phys: r.LastPhysicalRaw))
+                             .ToList());
+
+            var results = snapshot.Select(item =>
+            {
+                bool ok = ApiVerifyService.TryMatch(apiData, item.varName, out double apiVal)
+                          && Math.Abs(apiVal - item.phys) <= VerifyTolerance;
+                return (item.row, ok);
+            }).ToList();
+
+            await _dispatcher.InvokeAsync(() =>
+            {
+                int newlyMatched = 0;
+                var toWrite = new List<(int id, bool val)>();
+                foreach (var (row, ok) in results)
+                {
+                    if (ok && !row.IsVerified)
+                    {
+                        row.IsVerified = true;
+                        newlyMatched++;
+                        if (_dbService != null && row.RegisterConfigId > 0)
+                            toWrite.Add((row.RegisterConfigId, true));
+                    }
+                }
+                // 批量写 DB（fire-and-forget，不阻塞 UI）
+                if (toWrite.Count > 0 && _dbService != null)
+                {
+                    var db = _dbService;
+                    _ = Task.WhenAll(toWrite.Select(x => db.UpdateIsVerifiedAsync(x.id, x.val)));
+                }
+                int totalVerified = TelemeterRows.Concat(ControlRows).Count(r => r.IsVerified);
+                int totalRows     = TelemeterRows.Count + ControlRows.Count;
+                VerifyFailCount  = totalRows - totalVerified;
+                VerifyStatusText = $"本次新增 {newlyMatched} 项，累计通过 {totalVerified}/{totalRows}（误差≤{VerifyTolerance}）";
+                AddLog(LogLevel.Info, VerifyStatusText);
+            });
+        }
+        catch (OperationCanceledException) { /* 正常取消，忽略 */ }
+        catch (Exception ex)
+        {
+            await _dispatcher.InvokeAsync(() =>
+            {
+                VerifyStatusText = $"API 比对失败：{ex.Message}";
+                AddLog(LogLevel.Warn, VerifyStatusText);
+            });
+        }
     }
 
-    // ----------------------------------------------------------------
-    // 辅助方法
-    // ----------------------------------------------------------------
+    // ====================================================================
+    // 私有辅助
+    // ====================================================================
+
+    private async Task LoadStationsAsync()
+    {
+        Stations.Clear();
+        if (_dbService != null)
+        {
+            var list = await _dbService.GetAllStationsAsync();
+            foreach (var s in list) Stations.Add(s);
+        }
+        // 始终追加内存临时站点（名称后加"(临时)"标识）
+        foreach (var (s, _) in _inMemoryStations.Values)
+            Stations.Add(s);
+
+        int tmpCount = _inMemoryStations.Count;
+        string detail = tmpCount > 0 ? $"（含 {tmpCount} 个临时）" : string.Empty;
+        AddLog(LogLevel.Info, $"已加载 {Stations.Count} 个站点{detail}");
+    }
+
+    private async Task LoadRegisterConfigsAsync(int stationId)
+    {
+        // 取消订阅旧行的属性变更事件
+        foreach (var r in TelemeterRows.Concat(ControlRows))
+            r.PropertyChanged -= OnRowPropertyChanged;
+
+        // 先用新空列表替换 _pollGroups（不 Clear），使后台 poll 快照的旧引用自然过期
+        _pollGroups = new List<PollGroup>();
+        _searchMatchIndex     = -1;
+        _unverifiedMatchIndex = -1;
+        TelemeterRows.Clear();
+        ControlRows.Clear();
+
+        List<MasterRegisterConfig> configs;
+        if (stationId < 0 && _inMemoryStations.TryGetValue(stationId, out var mem))
+        {
+            configs = mem.Configs;
+        }
+        else if (_dbService != null)
+        {
+            configs = await _dbService.GetRegisterConfigsAsync(stationId);
+        }
+        else
+        {
+            AddLog(LogLevel.Warn, "请先选择站点或连接数据库");
+            return;
+        }
+
+        if (configs.Count == 0)
+        {
+            AddLog(LogLevel.Warn, $"站点 ID={stationId} 暂无寄存器配置");
+            return;
+        }
+
+        var allRows = new List<RegisterDisplayRow>();
+        foreach (var cfg in configs)
+        {
+            var row = new RegisterDisplayRow
+            {
+                RegisterConfigId = cfg.Id,
+                StartAddress     = cfg.StartAddress,
+                Quantity         = cfg.Quantity,
+                VariableName     = cfg.VariableName,
+                ChineseName      = cfg.ChineseName,
+                Unit             = cfg.Unit,
+                DataType         = cfg.DataType,
+                ReadWrite        = cfg.ReadWrite,
+                ScaleFactor      = cfg.ScaleFactor,
+                Offset           = cfg.Offset,
+                ValueRange       = cfg.ValueRange,
+                Description      = cfg.Description,
+                Category         = cfg.Category,
+                StatusMappings   = cfg.StatusMappings,
+                IsVerified       = cfg.IsVerified
+            };
+            allRows.Add(row);
+            row.PropertyChanged += OnRowPropertyChanged;
+            if (cfg.Category == 0) TelemeterRows.Add(row);
+            else                   ControlRows.Add(row);
+        }
+
+        // 遥测 + 遥控全部纳入轮询；并发冲突已由 SemaphoreSlim 在 Service 层解决，
+        // SlaveException 在 PollLoopAsync 内层 catch 中记日志后 continue，不再弹窗。
+        _pollGroups = BuildPollGroups(allRows);
+
+        int telCount  = allRows.Count(r => r.Category == 0);
+        int ctrlCount = allRows.Count - telCount;
+        AddLog(LogLevel.Info,
+            $"已加载 {configs.Count} 条寄存器配置" +
+            $"（遥测 {telCount} 条，遥控 {ctrlCount} 条 → {_pollGroups.Count} 个轮询段）");
+
+        // 重启绿点同步循环（仅 DB 模式）
+        RestartSyncLoop();
+    }
+
+    private async Task SaveStationToDbAsync(MasterStation station, List<MasterRegisterConfig> configs)
+    {
+        if (_dbService == null)
+        {
+            // 无 DB：保存到内存，临时 ID 为负数
+            if (station.Id == 0)
+            {
+                station.Id        = _nextTempId--;
+                station.CreatedAt = DateTime.Now;
+            }
+            _inMemoryStations[station.Id] = (station, configs);
+            AddLog(LogLevel.Info,
+                $"站点「{station.Name}」已临时保存（内存，共 {configs.Count} 条配置）");
+            await LoadStationsAsync();
+            SelectedStation = Stations.FirstOrDefault(s => s.Id == station.Id);
+            return;
+        }
+
+        // 有 DB：若是内存临时站点，重置 ID 交由 DB 分配
+        if (station.Id < 0)
+        {
+            _inMemoryStations.Remove(station.Id);
+            station.Id = 0;
+        }
+
+        try
+        {
+            int stationId = await _dbService.SaveStationAsync(station);
+            await _dbService.SaveRegisterConfigsAsync(stationId, configs);
+            AddLog(LogLevel.Info,
+                $"站点「{station.Name}」已保存到数据库（ID={stationId}，共 {configs.Count} 条配置）");
+            await LoadStationsAsync();
+            SelectedStation = Stations.FirstOrDefault(s => s.Id == stationId);
+        }
+        catch (Exception ex)
+        {
+            AddLog(LogLevel.Error, $"保存站点失败：{ex.Message}");
+            MessageBox.Show($"保存失败：\n{ex.Message}", "错误",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// 将 RegisterDisplayRow 列表按地址分组，相邻 gap ≤ 20 且总长度 ≤ 125 的合并为一组。
+    /// </summary>
+    private static List<PollGroup> BuildPollGroups(List<RegisterDisplayRow> rows)
+    {
+        const int GAP       = 20;
+        const int MAX_REGS  = 125;
+
+        var sorted = rows.OrderBy(r => r.StartAddress).ToList();
+        var groups = new List<PollGroup>();
+        int i = 0;
+
+        while (i < sorted.Count)
+        {
+            var groupRows = new List<RegisterDisplayRow> { sorted[i] };
+            int gStart    = sorted[i].StartAddress;
+            // 单行 Quantity 超过 MAX_REGS 时截断，避免 FC03 帧超长
+            int gEnd      = sorted[i].StartAddress + Math.Min(sorted[i].Quantity, MAX_REGS);
+
+            while (i + 1 < sorted.Count)
+            {
+                var next    = sorted[i + 1];
+                int nextEnd = next.StartAddress + next.Quantity;
+                if (next.StartAddress - gEnd <= GAP && nextEnd - gStart <= MAX_REGS)
+                {
+                    i++;
+                    groupRows.Add(next);
+                    gEnd = Math.Max(gEnd, nextEnd);
+                }
+                else break;
+            }
+            groups.Add(new PollGroup(gStart, Math.Min(gEnd - gStart, MAX_REGS), groupRows));
+            i++;
+        }
+        return groups;
+    }
+
+    private void ExportToExcel(string filePath)
+    {
+        using var wb = new ClosedXML.Excel.XLWorkbook();
+
+        WriteSheet(wb, "遥测", TelemeterRows);
+        WriteSheet(wb, "遥控", ControlRows);
+        wb.SaveAs(filePath);
+    }
+
+    private static void WriteSheet(ClosedXML.Excel.XLWorkbook wb,
+        string sheetName, IEnumerable<RegisterDisplayRow> rows)
+    {
+        var ws = wb.AddWorksheet(sheetName);
+        string[] headers = { "中文名", "变量名", "地址", "数量", "读取值", "单位", "取值范围", "比例系数", "更新时间" };
+        for (int c = 0; c < headers.Length; c++)
+            ws.Cell(1, c + 1).Value = headers[c];
+        ws.Range(1, 1, 1, headers.Length).Style.Font.Bold = true;
+        ws.Range(1, 1, 1, headers.Length).Style.Fill
+            .BackgroundColor = ClosedXML.Excel.XLColor.FromHtml("#2563EB");
+        ws.Range(1, 1, 1, headers.Length).Style.Font.FontColor = ClosedXML.Excel.XLColor.White;
+
+        int row = 2;
+        foreach (var r in rows)
+        {
+            ws.Cell(row, 1).Value = r.ChineseName;
+            ws.Cell(row, 2).Value = r.VariableName;
+            ws.Cell(row, 3).Value = r.StartAddress;
+            ws.Cell(row, 4).Value = r.Quantity;
+            ws.Cell(row, 5).Value = r.PhysicalValue;
+            ws.Cell(row, 6).Value = r.Unit;
+            ws.Cell(row, 7).Value = r.ValueRange;
+            ws.Cell(row, 8).Value = r.ScaleFactor;
+            ws.Cell(row, 9).Value = r.LastUpdated;
+            row++;
+        }
+        ws.Columns().AdjustToContents();
+    }
 
     private SlaveEndpoint BuildEndpoint() => new()
     {
-        Name          = "主站目标",
+        Name          = SelectedStation?.Name ?? "主站目标",
         Protocol      = Protocol,
         Host          = RemoteHost,
         Port          = RemotePort,
         PortName      = ComPort,
         BaudRate      = BaudRate,
         SlaveId       = SlaveId,
-        StartAddr     = StartAddress,
-        Quantity      = Quantity,
         PollIntervalMs = PollIntervalMs
     };
 
+    private async void OnRowPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (sender is not RegisterDisplayRow row) return;
+        if (e.PropertyName != nameof(RegisterDisplayRow.ChineseName) &&
+            e.PropertyName != nameof(RegisterDisplayRow.VariableName)) return;
+        if (_dbService == null || row.RegisterConfigId <= 0) return;
+        try
+        {
+            await _dbService.UpdateRegisterNamesAsync(row.RegisterConfigId, row.ChineseName, row.VariableName);
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.InvokeAsync(() => AddLog(LogLevel.Warn, $"名称保存失败：{ex.Message}"));
+        }
+    }
+
+    /// <summary>弹出密码对话框，返回是否验证通过</summary>
+    private static bool VerifyPassword()
+    {
+        var dlg = new PasswordDialog { Owner = Application.Current.MainWindow };
+        dlg.ShowDialog();
+        return dlg.Confirmed;
+    }
+
     private void AddLog(LogLevel level, string msg)
     {
-        if (LogEntries.Count >= 500)
-            LogEntries.RemoveAt(0);
+        if (LogEntries.Count >= 500) LogEntries.RemoveAt(0);
         LogEntries.Add(LogEntry.Create(level, msg));
     }
+
+    /// <summary>取消旧循环并启动新循环（切换站点时调用）</summary>
+    private void RestartSyncLoop()
+    {
+        _syncCts?.Cancel();
+        _syncCts?.Dispose();
+        if (_dbService == null) return;          // 无 DB 则不启动
+        _syncCts = new CancellationTokenSource();
+        _ = IsVerifiedSyncLoopAsync(_syncCts.Token);
+    }
+
+    /// <summary>每 1 秒从 DB 拉取绿点状态，同步到当前所有行（多客户端共享）</summary>
+    private async Task IsVerifiedSyncLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(1000, ct);
+
+                if (_dbService == null) continue;
+
+                // UI 线程快照：只取已存入 DB 的行（RegisterConfigId > 0）
+                var snapshot = await _dispatcher.InvokeAsync(() =>
+                    TelemeterRows.Concat(ControlRows)
+                                 .Where(r => r.RegisterConfigId > 0)
+                                 .Select(r => (r.RegisterConfigId, row: r))
+                                 .ToList());
+
+                if (snapshot.Count == 0) continue;
+
+                var map = await _dbService.GetIsVerifiedMapAsync(snapshot.Select(x => x.RegisterConfigId));
+
+                await _dispatcher.InvokeAsync(() =>
+                {
+                    foreach (var (id, row) in snapshot)
+                    {
+                        if (map.TryGetValue(id, out bool dbVal) && row.IsVerified != dbVal)
+                            row.IsVerified = dbVal;
+                    }
+                    int total    = TelemeterRows.Count + ControlRows.Count;
+                    int verified = TelemeterRows.Concat(ControlRows).Count(r => r.IsVerified);
+                    VerifyFailCount = total - verified;
+                });
+            }
+            catch (OperationCanceledException) { break; }
+            catch { /* DB 临时不可达，忽略本次，下次继续 */ }
+        }
+    }
 }
+
+/// <summary>轮询地址段（连续地址范围 + 属于该段的所有显示行）</summary>
+internal sealed record PollGroup(int StartAddress, int Length, List<RegisterDisplayRow> Rows);
 
 /// <summary>通用 ComboBox 数据项</summary>
 public record ComboItem<T>(string Display, T Value);

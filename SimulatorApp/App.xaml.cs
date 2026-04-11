@@ -29,7 +29,7 @@ public partial class App : Application
         base.OnStartup(e);
 
         // 初始化 NLog（读取配置文件）
-        Shared.Logging.AppLogger.Info("GS215 EMS 设备故障模拟器 启动");
+        Shared.Logging.AppLogger.Info("EMS设备故障模拟器 启动");
     }
 
     // App.xaml 中配置 Startup="App_OnStartup"，由此事件创建并显示主窗口（注入 DI ViewModel）
