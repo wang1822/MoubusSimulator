@@ -26,7 +26,10 @@ public class MasterRegisterConfig
     public int    Category         { get; set; } = 0;
     public int    SortOrder        { get; set; } = 0;
 
-    public List<MasterStatusMapping> StatusMappings { get; set; } = new();
-
     public bool IsVerified { get; set; } = false;
+
+    /// <summary>上次写入的原始寄存器显示字符串（如 "0x0000 0x0002"），用于下次打开时恢复显示</summary>
+    public string LastRawRegisters  { get; set; } = string.Empty;
+    /// <summary>上次写入的物理量显示值（如 "2.5"），预填到编辑框</summary>
+    public string LastPhysicalValue { get; set; } = string.Empty;
 }

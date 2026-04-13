@@ -59,26 +59,27 @@ public class MasterDbService : IMasterDbService
                 FOREIGN KEY (StationId) REFERENCES MasterStations(Id) ON DELETE CASCADE
             );
 
-            IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name='MasterStatusMappings' AND type='U')
-            CREATE TABLE MasterStatusMappings (
-                Id               INT IDENTITY(1,1) PRIMARY KEY,
-                RegisterConfigId INT           NOT NULL,
-                StatusValue      INT           NOT NULL,
-                StatusText       NVARCHAR(200) NOT NULL DEFAULT '',
-                FOREIGN KEY (RegisterConfigId) REFERENCES MasterRegisterConfigs(Id) ON DELETE CASCADE
-            );
             """;
 
         await using var cmd = new SqlCommand(ddl, conn);
         await cmd.ExecuteNonQueryAsync();
 
-        // 字段迁移：若 IsVerified 列不存在则补加
+        // 字段迁移：按需补加新列（保证旧库升级兼容）
         const string migrate = """
             IF NOT EXISTS (
                 SELECT 1 FROM sys.columns
                 WHERE object_id = OBJECT_ID('MasterRegisterConfigs') AND name = 'IsVerified'
             )
                 ALTER TABLE MasterRegisterConfigs ADD IsVerified BIT NOT NULL DEFAULT 0;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID('MasterRegisterConfigs') AND name = 'LastRawRegisters'
+            )
+            BEGIN
+                ALTER TABLE MasterRegisterConfigs ADD LastRawRegisters  NVARCHAR(200) NOT NULL DEFAULT '';
+                ALTER TABLE MasterRegisterConfigs ADD LastPhysicalValue NVARCHAR(100) NOT NULL DEFAULT '';
+            END
             """;
         await using var migCmd = new SqlCommand(migrate, conn);
         await migCmd.ExecuteNonQueryAsync();
@@ -172,7 +173,8 @@ public class MasterDbService : IMasterDbService
 
         const string sql = """
             SELECT Id,StationId,StartAddress,Quantity,VariableName,ChineseName,ReadWrite,
-                   Unit,DataType,RegisterDataType,ScaleFactor,Offset,ValueRange,Description,Category,SortOrder,IsVerified
+                   Unit,DataType,RegisterDataType,ScaleFactor,Offset,ValueRange,Description,
+                   Category,SortOrder,IsVerified,LastRawRegisters,LastPhysicalValue
             FROM MasterRegisterConfigs
             WHERE StationId=@StationId
             ORDER BY SortOrder,StartAddress
@@ -181,11 +183,6 @@ public class MasterDbService : IMasterDbService
         cmd.Parameters.AddWithValue("@StationId", stationId);
         await using var r = await cmd.ExecuteReaderAsync();
         while (await r.ReadAsync()) list.Add(MapConfig(r));
-
-        // 每个配置加载状态映射
-        foreach (var cfg in list)
-            cfg.StatusMappings = await GetStatusMappingsAsync(cfg.Id);
-
         return list;
     }
 
@@ -194,7 +191,7 @@ public class MasterDbService : IMasterDbService
         await using var conn = new SqlConnection(_cs);
         await conn.OpenAsync();
 
-        // 先删除该站所有配置（级联删除 StatusMappings）
+        // 先删除该站所有配置
         await using (var del = new SqlCommand(
             "DELETE FROM MasterRegisterConfigs WHERE StationId=@StationId", conn))
         {
@@ -219,59 +216,6 @@ public class MasterDbService : IMasterDbService
             AddConfigParams(ins_cmd, cfg);
             int newId = (int)(await ins_cmd.ExecuteScalarAsync())!;
             cfg.Id = newId;
-
-            if (cfg.StatusMappings.Count > 0)
-                await SaveStatusMappingsAsync(cfg.Id, cfg.StatusMappings);
-        }
-    }
-
-    // ────────────────────────────────────────────────────────────────────
-    // 状态映射
-    // ────────────────────────────────────────────────────────────────────
-
-    public async Task<List<MasterStatusMapping>> GetStatusMappingsAsync(int registerConfigId)
-    {
-        var list = new List<MasterStatusMapping>();
-        await using var conn = new SqlConnection(_cs);
-        await conn.OpenAsync();
-        const string sql =
-            "SELECT Id,RegisterConfigId,StatusValue,StatusText " +
-            "FROM MasterStatusMappings WHERE RegisterConfigId=@RcId ORDER BY StatusValue";
-        await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@RcId", registerConfigId);
-        await using var r = await cmd.ExecuteReaderAsync();
-        while (await r.ReadAsync())
-        {
-            list.Add(new MasterStatusMapping
-            {
-                Id               = r.GetInt32(0),
-                RegisterConfigId = r.GetInt32(1),
-                StatusValue      = r.GetInt32(2),
-                StatusText       = r.GetString(3)
-            });
-        }
-        return list;
-    }
-
-    public async Task SaveStatusMappingsAsync(int registerConfigId, List<MasterStatusMapping> mappings)
-    {
-        await using var conn = new SqlConnection(_cs);
-        await conn.OpenAsync();
-        await using (var del = new SqlCommand(
-            "DELETE FROM MasterStatusMappings WHERE RegisterConfigId=@RcId", conn))
-        {
-            del.Parameters.AddWithValue("@RcId", registerConfigId);
-            await del.ExecuteNonQueryAsync();
-        }
-        foreach (var m in mappings)
-        {
-            const string ins = "INSERT INTO MasterStatusMappings (RegisterConfigId,StatusValue,StatusText) " +
-                               "VALUES (@RcId,@SVal,@SText)";
-            await using var cmd = new SqlCommand(ins, conn);
-            cmd.Parameters.AddWithValue("@RcId",   registerConfigId);
-            cmd.Parameters.AddWithValue("@SVal",   m.StatusValue);
-            cmd.Parameters.AddWithValue("@SText",  m.StatusText);
-            await cmd.ExecuteNonQueryAsync();
         }
     }
 
@@ -311,7 +255,9 @@ public class MasterDbService : IMasterDbService
         Description      = r.GetString(13),
         Category         = r.GetByte(14),
         SortOrder        = r.GetInt32(15),
-        IsVerified       = r.GetBoolean(16)
+        IsVerified       = r.GetBoolean(16),
+        LastRawRegisters  = r.IsDBNull(17) ? string.Empty : r.GetString(17),
+        LastPhysicalValue = r.IsDBNull(18) ? string.Empty : r.GetString(18)
     };
 
     private static void AddStationParams(SqlCommand cmd, MasterStation s)
@@ -357,6 +303,18 @@ public class MasterDbService : IMasterDbService
             "UPDATE MasterRegisterConfigs SET IsVerified=@v WHERE Id=@id", conn);
         cmd.Parameters.AddWithValue("@v",  isVerified ? 1 : 0);
         cmd.Parameters.AddWithValue("@id", configId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task UpdateLastWrittenAsync(int configId, string rawRegisters, string physicalValue)
+    {
+        await using var conn = new SqlConnection(_cs);
+        await conn.OpenAsync();
+        await using var cmd = new SqlCommand(
+            "UPDATE MasterRegisterConfigs SET LastRawRegisters=@raw, LastPhysicalValue=@phys WHERE Id=@id", conn);
+        cmd.Parameters.AddWithValue("@raw",  rawRegisters);
+        cmd.Parameters.AddWithValue("@phys", physicalValue);
+        cmd.Parameters.AddWithValue("@id",   configId);
         await cmd.ExecuteNonQueryAsync();
     }
 

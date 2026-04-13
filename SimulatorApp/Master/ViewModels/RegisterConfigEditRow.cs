@@ -21,12 +21,6 @@ public partial class RegisterConfigEditRow : ObservableObject
     [ObservableProperty] private string _valueRange       = string.Empty;
     [ObservableProperty] private string _description      = string.Empty;
 
-    /// <summary>
-    /// 状态/故障映射，格式：0=正常;1=停机;2=离线;3=故障
-    /// 多条用英文分号分隔，值与文本用等号分隔。
-    /// </summary>
-    [ObservableProperty] private string _statusMappingsText = string.Empty;
-
     /// <summary>DB 主键（0 表示新建）</summary>
     public int Id       { get; set; } = 0;
     /// <summary>0=遥测 1=遥控（由所在 Tab 设置）</summary>
@@ -34,29 +28,24 @@ public partial class RegisterConfigEditRow : ObservableObject
 
     // ────────────────────────────────────────────────────────────────────
 
-    public MasterRegisterConfig ToModel(int stationId)
+    public MasterRegisterConfig ToModel(int stationId) => new()
     {
-        var cfg = new MasterRegisterConfig
-        {
-            Id               = Id,
-            StationId        = stationId,
-            StartAddress     = StartAddress,
-            Quantity         = Quantity,
-            VariableName     = VariableName,
-            ChineseName      = ChineseName,
-            ReadWrite        = ReadWrite,
-            Unit             = Unit,
-            DataType         = DataType,
-            RegisterDataType = RegisterDataType,
-            ScaleFactor      = ScaleFactor,
-            Offset           = Offset,
-            ValueRange       = ValueRange,
-            Description      = Description,
-            Category         = Category
-        };
-        cfg.StatusMappings.AddRange(ParseMappings());
-        return cfg;
-    }
+        Id               = Id,
+        StationId        = stationId,
+        StartAddress     = StartAddress,
+        Quantity         = Quantity,
+        VariableName     = VariableName,
+        ChineseName      = ChineseName,
+        ReadWrite        = ReadWrite,
+        Unit             = Unit,
+        DataType         = DataType,
+        RegisterDataType = RegisterDataType,
+        ScaleFactor      = ScaleFactor,
+        Offset           = Offset,
+        ValueRange       = ValueRange,
+        Description      = Description,
+        Category         = Category
+    };
 
     public static RegisterConfigEditRow FromModel(MasterRegisterConfig m) => new()
     {
@@ -73,20 +62,6 @@ public partial class RegisterConfigEditRow : ObservableObject
         Offset           = m.Offset,
         ValueRange       = m.ValueRange,
         Description      = m.Description,
-        Category         = m.Category,
-        StatusMappingsText = string.Join(";",
-            m.StatusMappings.Select(s => $"{s.StatusValue}={s.StatusText}"))
+        Category         = m.Category
     };
-
-    private List<MasterStatusMapping> ParseMappings()
-    {
-        var list = new List<MasterStatusMapping>();
-        foreach (var part in StatusMappingsText.Split(';', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var eq = part.IndexOf('=');
-            if (eq > 0 && int.TryParse(part[..eq].Trim(), out int val))
-                list.Add(new MasterStatusMapping { StatusValue = val, StatusText = part[(eq + 1)..].Trim() });
-        }
-        return list;
-    }
 }

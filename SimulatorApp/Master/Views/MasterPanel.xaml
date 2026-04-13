@@ -460,68 +460,24 @@
                             <DataGridTextColumn Header="地址"     Binding="{Binding StartAddress}" Width="55"        IsReadOnly="True"/>
                             <DataGridTextColumn Header="数量"     Binding="{Binding Quantity}"     Width="40"        IsReadOnly="True"/>
                             <DataGridTextColumn Header="原始寄存器" Binding="{Binding RawDisplay}" Width="Auto" MinWidth="80" IsReadOnly="True"/>
-                            <!-- 当前值：右键可切换 uint / int / 字符串 三种解析模式 -->
-                            <DataGridTemplateColumn Header="当前值" Width="90" IsReadOnly="True">
+                            <!-- 当前值：常驻 TextBox，失焦后自动触发 FC16 写入 -->
+                            <DataGridTemplateColumn Header="当前值（编辑后失焦写入）" Width="160" IsReadOnly="True">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding PhysicalValue}"
-                                                   Padding="8,2" VerticalAlignment="Center"
-                                                   ToolTip="{Binding DisplayModeLabel}">
-                                            <TextBlock.ContextMenu>
-                                                <ContextMenu DataContext="{Binding PlacementTarget.DataContext,
-                                                                         RelativeSource={RelativeSource Self}}">
-                                                    <MenuItem Header="🔢 uint（无符号整数）"
-                                                              IsChecked="{Binding IsUIntMode, Mode=OneWay}"
-                                                              Command="{Binding SetDisplayModeCommand}"
-                                                              CommandParameter="uint"/>
-                                                    <MenuItem Header="± int（有符号整数）"
-                                                              IsChecked="{Binding IsIntMode, Mode=OneWay}"
-                                                              Command="{Binding SetDisplayModeCommand}"
-                                                              CommandParameter="int"/>
-                                                    <MenuItem Header="🔤 字符串（ASCII）"
-                                                              IsChecked="{Binding IsStringMode, Mode=OneWay}"
-                                                              Command="{Binding SetDisplayModeCommand}"
-                                                              CommandParameter="str"/>
-                                                    <Separator/>
-                                                    <MenuItem Header="复制" Command="ApplicationCommands.Copy"/>
-                                                </ContextMenu>
-                                            </TextBlock.ContextMenu>
-                                        </TextBlock>
+                                        <TextBox Text="{Binding WriteValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 Background="Transparent" Foreground="#E2E8F0"
+                                                 BorderBrush="Transparent" BorderThickness="0"
+                                                 Padding="6,2" FontFamily="Consolas" FontSize="12"
+                                                 VerticalContentAlignment="Center"
+                                                 ToolTip="{Binding RawDisplay}"
+                                                 GotFocus="CtrlWriteCell_GotFocus"
+                                                 LostFocus="CtrlWriteCell_LostFocus"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
                             <DataGridTextColumn Header="单位"     Binding="{Binding Unit}"         Width="55"        IsReadOnly="True"/>
                             <DataGridTextColumn Header="取值范围" Binding="{Binding ValueRange}"   Width="150"       IsReadOnly="True"/>
                             <DataGridTextColumn Header="比例系数" Binding="{Binding ScaleFactor}"  Width="70"        IsReadOnly="True"/>
-
-                            <!-- 写入值（可编辑）-->
-                            <DataGridTemplateColumn Header="写入值（物理量）" Width="120">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBox Text="{Binding WriteValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                 Background="#1E293B" Foreground="#E2E8F0"
-                                                 BorderBrush="#334155" BorderThickness="1"
-                                                 Padding="4,2" FontFamily="Consolas" FontSize="12"
-                                                 VerticalContentAlignment="Center"/>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-
-                            <!-- 写入按钮 -->
-                            <DataGridTemplateColumn Header="" Width="70">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Button Content="写入"
-                                                Height="24" Padding="6,0"
-                                                Background="#2563EB" Foreground="White"
-                                                BorderThickness="0" Cursor="Hand"
-                                                FontSize="12"
-                                                Command="{Binding DataContext.WriteControlRowCommand,
-                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding}"/>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
 
                             <DataGridTextColumn Header="更新时间" Binding="{Binding LastUpdated}" Width="*"/>
                         </DataGrid.Columns>
