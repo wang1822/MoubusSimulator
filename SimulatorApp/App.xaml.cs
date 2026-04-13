@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SimulatorApp.Master.Services;
 using SimulatorApp.Master.ViewModels;
 using SimulatorApp.Shared.Services;
+using SimulatorApp.Shared.Views;
 using SimulatorApp.Slave.Services;
 using SimulatorApp.Slave.ViewModels;
 using SimulatorApp.ViewModels;
@@ -105,7 +106,7 @@ public partial class App : Application
         System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
         Shared.Logging.AppLogger.Error("UI 线程未处理异常", e.Exception);
-        MessageBox.Show($"发生未处理异常：\n{e.Exception.Message}\n\n请查看日志文件。",
+        ThemedMessageBox.Show($"发生未处理异常：\n{e.Exception.Message}\n\n请查看日志文件。",
             "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true; // 防止崩溃
     }

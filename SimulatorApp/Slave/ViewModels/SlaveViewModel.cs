@@ -6,6 +6,7 @@ using SimulatorApp.Shared.Helpers;
 using SimulatorApp.Shared.Logging;
 using SimulatorApp.Shared.Models;
 using SimulatorApp.Shared.Services;
+using SimulatorApp.Shared.Views;
 using SimulatorApp.Slave.Services;
 using SimulatorApp.Slave.Views.Panels;
 using System.Collections.ObjectModel;
@@ -269,7 +270,7 @@ public partial class SlaveViewModel : ObservableObject
         {
             config.StatusText = $"启动失败：{ex.Message}";
             AppLogger.Error("监听启动失败", ex);
-            MessageBox.Show($"监听启动失败：\n{ex.Message}", "错误",
+            ThemedMessageBox.Show($"监听启动失败：\n{ex.Message}", "错误",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -344,7 +345,7 @@ public partial class SlaveViewModel : ObservableObject
             var (deviceName, rows) = ExcelHelper.ParseRowsFromFile(dlg.FileName);
             if (rows.Count == 0)
             {
-                MessageBox.Show("文件中未找到有效数据行。\n请确认文件格式与导出格式一致（第5行起为数据行）。",
+                ThemedMessageBox.Show("文件中未找到有效数据行。\n请确认文件格式与导出格式一致（第5行起为数据行）。",
                     "导入失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -354,7 +355,7 @@ public partial class SlaveViewModel : ObservableObject
         catch (Exception ex)
         {
             AppLogger.Error($"导入失败：{ex.Message}", ex);
-            MessageBox.Show($"导入失败：\n{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ThemedMessageBox.Show($"导入失败：\n{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -364,7 +365,7 @@ public partial class SlaveViewModel : ObservableObject
         var checkedDevices = DeviceList.Where(v => v.IsSimulating).ToList();
         if (checkedDevices.Count == 0)
         {
-            MessageBox.Show("没有已勾选的设备，无法导出。\n请先勾选至少一个设备。",
+            ThemedMessageBox.Show("没有已勾选的设备，无法导出。\n请先勾选至少一个设备。",
                 "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -377,13 +378,13 @@ public partial class SlaveViewModel : ObservableObject
         {
             var saved = ExcelHelper.ExportDeviceViewModelsToFolder(dlg.FolderName, checkedDevices);
             AppLogger.Info($"设备 Excel 已导出（{saved.Count} 个文件）→ {dlg.FolderName}");
-            MessageBox.Show($"已导出 {saved.Count} 个文件至：\n{dlg.FolderName}",
+            ThemedMessageBox.Show($"已导出 {saved.Count} 个文件至：\n{dlg.FolderName}",
                 "导出完成", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
             AppLogger.Error($"导出失败：{ex.Message}", ex);
-            MessageBox.Show($"导出失败：\n{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ThemedMessageBox.Show($"导出失败：\n{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -393,7 +394,7 @@ public partial class SlaveViewModel : ObservableObject
         var text = Clipboard.GetText();
         if (string.IsNullOrWhiteSpace(text))
         {
-            MessageBox.Show("剪贴板为空，请先在 Excel 中选中并复制数据行，再点此按钮。",
+            ThemedMessageBox.Show("剪贴板为空，请先在 Excel 中选中并复制数据行，再点此按钮。",
                 "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -402,7 +403,7 @@ public partial class SlaveViewModel : ObservableObject
             var rows = ExcelHelper.ParseRowsFromClipboard(text);
             if (rows.Count == 0)
             {
-                MessageBox.Show("未解析到有效数据行。\n请确认已复制含「地址」列和「值」列的表格数据。",
+                ThemedMessageBox.Show("未解析到有效数据行。\n请确认已复制含「地址」列和「值」列的表格数据。",
                     "解析失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -412,7 +413,7 @@ public partial class SlaveViewModel : ObservableObject
         catch (Exception ex)
         {
             AppLogger.Error($"粘贴导入失败：{ex.Message}", ex);
-            MessageBox.Show($"粘贴导入失败：\n{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ThemedMessageBox.Show($"粘贴导入失败：\n{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -446,7 +447,7 @@ public partial class SlaveViewModel : ObservableObject
             var checkedDevices = DeviceList.Where(v => v.IsSimulating).ToList();
             if (checkedDevices.Count == 0)
             {
-                MessageBox.Show("没有已勾选的设备，无法导出快照。\n请先勾选至少一个设备。",
+                ThemedMessageBox.Show("没有已勾选的设备，无法导出快照。\n请先勾选至少一个设备。",
                     "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
