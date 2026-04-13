@@ -24,8 +24,6 @@ public partial class RegisterDisplayRow : ObservableObject
     public string ValueRange       { get; init; } = string.Empty;
     public string Description      { get; init; } = string.Empty;
     public int    Category         { get; init; } = 0;
-    public List<MasterStatusMapping> StatusMappings { get; init; } = new();
-
     // ── 可编辑字段（用户可内联修改，实时写 DB）────────────────────
     [ObservableProperty] private string _chineseName  = string.Empty;
     [ObservableProperty] private string _variableName = string.Empty;
@@ -83,6 +81,35 @@ public partial class RegisterDisplayRow : ObservableObject
             "str" => ValueDisplayMode.String,
             _     => ValueDisplayMode.UInt
         };
+    }
+
+    /// <summary>
+    /// 从数据库保存的字符串恢复上次写入值（启动时调用，仅遥控行）。
+    /// 同时预填 WriteValue，让用户进入编辑时直接看到上次写入的值。
+    /// </summary>
+    public void InitFromSaved(string rawRegisters, string physicalValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawRegisters)) return;
+        var regs = ParseRawDisplay(rawRegisters);
+        if (regs.Length == 0) return;
+        _lastRegs       = regs;
+        RawDisplay      = rawRegisters;
+        PhysicalValue   = physicalValue;
+        WriteValue      = physicalValue;   // 预填编辑框
+        LastPhysicalRaw = ComputePhysicalWithScale(regs); // 供 API 比对使用
+        LastUpdated     = "(上次写入)";
+    }
+
+    /// <summary>将 "0x0000 0x0002 ..." 字符串解析回 ushort 数组</summary>
+    private static ushort[] ParseRawDisplay(string raw)
+    {
+        try
+        {
+            return raw.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                      .Select(s => Convert.ToUInt16(s.Replace("0x", "").Replace("0X", ""), 16))
+                      .ToArray();
+        }
+        catch { return Array.Empty<ushort>(); }
     }
 
     /// <summary>根据轮询到的原始寄存器数组更新显示值（UI 线程调用）</summary>

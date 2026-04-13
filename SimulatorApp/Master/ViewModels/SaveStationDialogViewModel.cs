@@ -4,6 +4,7 @@ using Microsoft.Win32;
 using SimulatorApp.Master.Models;
 using SimulatorApp.Master.Services;
 using SimulatorApp.Shared.Models;
+using SimulatorApp.Shared.Views;
 using System.Collections.ObjectModel;
 using System.IO.Ports;
 using System.Windows;
@@ -118,7 +119,7 @@ public partial class SaveStationDialogViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(StationName))
         {
-            MessageBox.Show("站点名称不能为空。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThemedMessageBox.Show("站点名称不能为空。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         DialogResult = true;
@@ -170,12 +171,12 @@ public partial class SaveStationDialogViewModel : ObservableObject
             var configs = MasterExcelHelper.ImportRegisterConfigs(dlg.FileName, category);
             foreach (var cfg in configs)
                 target.Add(RegisterConfigEditRow.FromModel(cfg));
-            MessageBox.Show($"导入成功，共 {configs.Count} 行。", "提示",
+            ThemedMessageBox.Show($"导入成功，共 {configs.Count} 行。", "提示",
                 MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"导入失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ThemedMessageBox.Show($"导入失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -191,7 +192,7 @@ public partial class SaveStationDialogViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"粘贴解析失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ThemedMessageBox.Show($"粘贴解析失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

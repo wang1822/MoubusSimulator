@@ -8,6 +8,7 @@ using PasswordDialog = SimulatorApp.Master.Views.PasswordDialog;
 using SimulatorApp.Shared.Helpers;
 using SimulatorApp.Shared.Logging;
 using SimulatorApp.Shared.Models;
+using SimulatorApp.Shared.Views;
 using System.Collections.ObjectModel;
 using System.IO.Ports;
 using System.Net.NetworkInformation;
@@ -226,7 +227,7 @@ public partial class MasterViewModel : ObservableObject
         {
             StatusText = $"连接失败：{ex.Message}";
             AddLog(LogLevel.Error, $"连接失败：{ex.Message}");
-            MessageBox.Show($"主站连接失败：\n{ex.Message}", "错误",
+            ThemedMessageBox.Show($"主站连接失败：\n{ex.Message}", "错误",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -391,11 +392,9 @@ public partial class MasterViewModel : ObservableObject
     [RelayCommand]
     public async Task WriteControlRowAsync(RegisterDisplayRow row)
     {
-        if (!IsConnected || _service == null)
-        {
-            MessageBox.Show("请先连接从站", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
+        // 未连接时静默返回（LostFocus 自动触发，不应弹窗干扰用户）
+        if (!IsConnected || _service == null) return;
+
         if (!double.TryParse(row.WriteValue, out double physVal))
         {
             AddLog(LogLevel.Error, $"写入值格式错误：\"{row.WriteValue}\"  [{row.ChineseName}]");
@@ -404,27 +403,25 @@ public partial class MasterViewModel : ObservableObject
 
         try
         {
+            // 遥控写入统一使用 FC16（Write Multiple Registers）。
+            // 真实设备控制寄存器普遍只开放 FC16，FC06 会被从站拒绝（SlaveException）。
             ushort[] regs = BuildWriteRegisters(row, physVal);
-            if (regs.Length == 1)
-            {
-                await _service.WriteSingleRegisterAsync(row.StartAddress, regs[0]);
-                AddLog(LogLevel.Info,
-                    $"FC06  addr={row.StartAddress}  raw=0x{regs[0]:X4}" +
-                    $"  [{row.ChineseName}]={physVal}{row.Unit}");
-            }
-            else
-            {
-                await _service.WriteMultipleRegistersAsync(row.StartAddress, regs);
-                string hexStr = string.Join(" ", regs.Select(r => $"0x{r:X4}"));
-                AddLog(LogLevel.Info,
-                    $"FC16  addr={row.StartAddress}  raw=[{hexStr}]" +
-                    $"  [{row.ChineseName}]={physVal}{row.Unit}");
-            }
-
-            // 写入成功后：① 立即把写入值显示到"当前值"列（不等下一个轮询周期）
+            await _service.WriteMultipleRegistersAsync(row.StartAddress, regs);
+            string hexStr = string.Join(" ", regs.Select(r => $"0x{r:X4}"));
+            AddLog(LogLevel.Info,
+                $"FC16  addr={row.StartAddress}  regs=[{hexStr}]" +
+                $"  [{row.ChineseName}]={physVal}{row.Unit}");
+            // 写入成功后更新原始寄存器缓存，再用用户输入的物理值覆盖显示
+            // （UpdateFromRaw 会按 DisplayMode 解算为原始 uint，对遥控值不直观）
             row.UpdateFromRaw(regs);
-            // ② 再尝试从从站回读确认（若地址不可读则静默跳过，显示值已由①更新）
-            await ReadBackControlRowAsync(row);
+            row.PhysicalValue = physVal.ToString();
+            row.WriteValue    = physVal.ToString();
+            // 持久化到 DB（fire-and-forget），下次打开程序时恢复显示
+            if (_dbService != null && row.RegisterConfigId > 0)
+            {
+                var db = _dbService;
+                _ = db.UpdateLastWrittenAsync(row.RegisterConfigId, row.RawDisplay, physVal.ToString());
+            }
         }
         catch (Exception ex)
         {
@@ -433,18 +430,43 @@ public partial class MasterViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 写入成功后回读寄存器，更新遥控行的"原始寄存器/当前值/更新时间"。
-    /// FC03 读失败（SlaveException）时静默忽略，不影响写入流程。
+    /// 遥控行"读取"按钮命令：按需 FC03 读取单个控制寄存器当前值。
+    /// 设备拒绝 FC03（SlaveException）时记详细警告，不弹窗。
     /// </summary>
-    private async Task ReadBackControlRowAsync(RegisterDisplayRow row)
+    [RelayCommand]
+    public async Task ReadControlRowAsync(RegisterDisplayRow row)
     {
-        if (_service == null) return;
+        if (!IsConnected || _service == null)
+        {
+            AddLog(LogLevel.Warn, "请先点击「▶ 开始轮询」建立连接");
+            return;
+        }
         try
         {
-            var readBack = await _service.ReadRegistersAsync(row.StartAddress, row.Quantity);
-            row.UpdateFromRaw(readBack);    // RelayCommand 在 UI 线程，可直接调用
+            var regs = await _service.ReadRegistersAsync(row.StartAddress, row.Quantity);
+            row.UpdateFromRaw(regs);
+            AddLog(LogLevel.Info,
+                $"FC03 读取成功  addr={row.StartAddress}  [{row.ChineseName}]={row.PhysicalValue}{row.Unit}");
         }
-        catch { /* 回读失败：从站不支持 FC03 读该地址，忽略 */ }
+        catch (Exception ex)
+        {
+            // 判断是否为设备主动拒绝（SlaveException 被 BuildReadException 包装为 InvalidOperationException）
+            bool deviceRejected = ex.InnerException != null &&
+                string.Equals(ex.InnerException.GetType().Name, "SlaveException", StringComparison.Ordinal);
+
+            if (deviceRejected)
+            {
+                AddLog(LogLevel.Warn,
+                    $"[{row.ChineseName}] addr={row.StartAddress} 设备拒绝 FC03 读取：" +
+                    "该地址为只写寄存器，无法从设备直接获取当前值。" +
+                    "请通过「写入」操作下发值，写入成功后【当前值】列将显示回显值。");
+            }
+            else
+            {
+                AddLog(LogLevel.Warn,
+                    $"FC03 读取失败 [{row.ChineseName}] addr={row.StartAddress}：{ex.Message}");
+            }
+        }
     }
 
     /// <summary>
@@ -655,16 +677,16 @@ public partial class MasterViewModel : ObservableObject
                     }
                     catch (Exception pollEx) when (pollEx is not OperationCanceledException)
                     {
-                        // 若连接已断（master 已释放）则重新抛出，让外层 catch 走断开流程
-                        if (_service?.IsConnected != true) throw;
+                        // 仅当 _service 已被置 null（DisconnectAsync 已执行完毕）才走断开流程；
+                        // IsConnected 依赖 TcpClient.Connected 在并发断开时可能短暂为 false，
+                        // 不能单独作为判断依据，否则轮询异常会被误判为连接断开。
+                        if (_service == null) throw;
 
-                        // 连接仍在线：SlaveException / 临时超时 / 地址越界等轮询级异常
-                        // ——不能用 catch(Modbus.SlaveException) 做精确匹配，
-                        //   因为 NModbus4 程序集版本差异可能导致运行时类型不匹配而逃逸到全局 Dialog
-                        int    addr    = group.StartAddress;
-                        int    len     = group.Length;
-                        string exType  = pollEx.GetType().Name;
-                        string exMsg   = pollEx.Message;
+                        // 遥测地址读取瞬时失败（超时/SlaveException）：记日志后跳过本组，继续下一组
+                        int    addr   = group.StartAddress;
+                        int    len    = group.Length;
+                        string exType = pollEx.GetType().Name;
+                        string exMsg  = pollEx.Message;
                         _dispatcher.InvokeAsync(() =>
                             AddLog(LogLevel.Warn,
                                 $"轮询跳过 addr={addr} len={len}  [{exType}] {exMsg}"));
@@ -841,24 +863,29 @@ public partial class MasterViewModel : ObservableObject
                 ValueRange       = cfg.ValueRange,
                 Description      = cfg.Description,
                 Category         = cfg.Category,
-                StatusMappings   = cfg.StatusMappings,
                 IsVerified       = cfg.IsVerified
             };
+            // 遥控行：从 DB 恢复上次写入值（不需要 FC03 轮询即可显示历史值）
+            if (cfg.Category == 1)
+                row.InitFromSaved(cfg.LastRawRegisters, cfg.LastPhysicalValue);
+
             allRows.Add(row);
             row.PropertyChanged += OnRowPropertyChanged;
             if (cfg.Category == 0) TelemeterRows.Add(row);
             else                   ControlRows.Add(row);
         }
 
-        // 遥测 + 遥控全部纳入轮询；并发冲突已由 SemaphoreSlim 在 Service 层解决，
-        // SlaveException 在 PollLoopAsync 内层 catch 中记日志后 continue，不再弹窗。
-        _pollGroups = BuildPollGroups(allRows);
+        // 只将遥测行（Category=0）纳入自动 FC03 轮询。
+        // 遥控行（Category=1）不参与轮询：真实设备控制寄存器通常只接受 FC16 写入，
+        // FC03 读取会返回 SlaveException。写入成功后由 WriteControlRowAsync 直接回显值；
+        // 如需手动读取请点击遥控行的"读取"按钮（FC03 按需触发，失败时记日志不弹窗）。
+        _pollGroups = BuildPollGroups(allRows.Where(r => r.Category == 0).ToList());
 
         int telCount  = allRows.Count(r => r.Category == 0);
         int ctrlCount = allRows.Count - telCount;
         AddLog(LogLevel.Info,
             $"已加载 {configs.Count} 条寄存器配置" +
-            $"（遥测 {telCount} 条，遥控 {ctrlCount} 条 → {_pollGroups.Count} 个轮询段）");
+            $"（遥测 {telCount} 条 → {_pollGroups.Count} 个轮询段，遥控 {ctrlCount} 条仅手动读写）");
 
         // 重启绿点同步循环（仅 DB 模式）
         RestartSyncLoop();
@@ -901,7 +928,7 @@ public partial class MasterViewModel : ObservableObject
         catch (Exception ex)
         {
             AddLog(LogLevel.Error, $"保存站点失败：{ex.Message}");
-            MessageBox.Show($"保存失败：\n{ex.Message}", "错误",
+            ThemedMessageBox.Show($"保存失败：\n{ex.Message}", "错误",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }

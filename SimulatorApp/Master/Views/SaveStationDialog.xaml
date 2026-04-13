@@ -307,9 +307,7 @@
                             <DataGridTextColumn Header="比例系数"   Binding="{Binding ScaleFactor}"      Width="70"/>
                             <DataGridTextColumn Header="偏移量"     Binding="{Binding Offset}"           Width="60"/>
                             <DataGridTextColumn Header="取值范围"   Binding="{Binding ValueRange}"       Width="160"/>
-                            <DataGridTextColumn Header="说明"       Binding="{Binding Description}"      Width="160"/>
-                            <DataGridTextColumn Header="状态映射(0=文本;1=文本)"
-                                                Binding="{Binding StatusMappingsText}"                  Width="*"/>
+                            <DataGridTextColumn Header="说明"       Binding="{Binding Description}"      Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -351,9 +349,7 @@
                             <DataGridTextColumn Header="比例系数"   Binding="{Binding ScaleFactor}"      Width="70"/>
                             <DataGridTextColumn Header="偏移量"     Binding="{Binding Offset}"           Width="60"/>
                             <DataGridTextColumn Header="取值范围"   Binding="{Binding ValueRange}"       Width="160"/>
-                            <DataGridTextColumn Header="说明"       Binding="{Binding Description}"      Width="160"/>
-                            <DataGridTextColumn Header="状态映射(0=文本;1=文本)"
-                                                Binding="{Binding StatusMappingsText}"                  Width="*"/>
+                            <DataGridTextColumn Header="说明"       Binding="{Binding Description}"      Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -364,9 +360,6 @@
         <Border Grid.Row="2" Background="#1E293B" Padding="16,10"
                 BorderBrush="#334155" BorderThickness="0,1,0,0">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Left"
-                           Text="提示：状态映射格式 → 0=正常;1=停机;3=故障（等号分隔值与文本，分号分隔多条）"
-                           Foreground="#475569" FontSize="11" VerticalAlignment="Center"/>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Content="✓ 保存配置"
                             Command="{Binding SaveCommand}"

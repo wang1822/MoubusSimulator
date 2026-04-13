@@ -19,16 +19,16 @@ public interface IMasterDbService
 
     // ── 寄存器配置 CRUD ──
     Task<List<MasterRegisterConfig>> GetRegisterConfigsAsync(int stationId);
-    /// <summary>先删除该站所有配置，再批量插入（含状态映射）</summary>
+    /// <summary>先删除该站所有配置，再批量插入</summary>
     Task                             SaveRegisterConfigsAsync(int stationId, List<MasterRegisterConfig> configs);
-
-    // ── 状态映射 CRUD ──
-    Task<List<MasterStatusMapping>>  GetStatusMappingsAsync(int registerConfigId);
-    Task                             SaveStatusMappingsAsync(int registerConfigId, List<MasterStatusMapping> mappings);
 
     // ── 名称实时编辑 ──
     Task UpdateRegisterNamesAsync(int configId, string chineseName, string variableName);
     Task UpdateStationNameAsync(int stationId, string name);
+
+    // ── 遥控写入值持久化 ──
+    /// <summary>保存遥控行上次写入的原始寄存器字符串与物理值</summary>
+    Task UpdateLastWrittenAsync(int configId, string rawRegisters, string physicalValue);
 
     // ── IsVerified 实时共享 ──
     /// <summary>写单行绿点状态到 DB</summary>
