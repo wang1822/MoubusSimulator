@@ -14,7 +14,7 @@ public class SlaveEndpoint
     public ProtocolType Protocol { get; set; } = ProtocolType.Tcp;
 
     // ── TCP ──
-    public string Host       { get; set; } = "127.0.0.1";
+    public string Host       { get; set; } = "172.168.3.100";
     public int    Port       { get; set; } = 502;
 
     // ── RTU ──
