@@ -1,19 +1,21 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Irony.Parsing;
 using Microsoft.Win32;
 using SimulatorApp.Master.Models;
 using SimulatorApp.Master.Services;
 using SimulatorApp.Master.Views;
-using PasswordDialog = SimulatorApp.Master.Views.PasswordDialog;
 using SimulatorApp.Shared.Helpers;
 using SimulatorApp.Shared.Logging;
 using SimulatorApp.Shared.Models;
 using SimulatorApp.Shared.Views;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.IO.Ports;
 using System.Net.NetworkInformation;
 using System.Windows;
 using System.Windows.Threading;
+using PasswordDialog = SimulatorApp.Master.Views.PasswordDialog;
 
 namespace SimulatorApp.Master.ViewModels;
 
@@ -27,7 +29,7 @@ public partial class MasterViewModel : ObservableObject
     // ── DB 连接 ───────────────────────────────────────────────────────────
     [ObservableProperty]
     private string _dbConnectionString =
-        "Server=localhost;Database=ModBusT;Trusted_Connection=True;TrustServerCertificate=True;";
+        "Server=10.184.4.153,1433;Database=ModBusT;User Id=sa;Password=000000;Encrypt=True;TrustServerCertificate=True;Connect Timeout=10;";
 
     [ObservableProperty] private bool   _isDbConnected = false;
     [ObservableProperty] private string _dbStatusText  = "未连接数据库";
@@ -82,7 +84,7 @@ public partial class MasterViewModel : ObservableObject
 
     // ── Modbus 连接参数 ───────────────────────────────────────────────────
     [ObservableProperty] private ProtocolType _protocol       = ProtocolType.Tcp;
-    [ObservableProperty] private string  _remoteHost          = "127.0.0.1";
+    [ObservableProperty] private string  _remoteHost          = "172.168.3.100";
     [ObservableProperty] private int     _remotePort          = 502;
     [ObservableProperty] private byte    _slaveId             = 1;
     [ObservableProperty] private string  _comPort             = "COM3";
@@ -146,6 +148,12 @@ public partial class MasterViewModel : ObservableObject
     // ── 私有成员 ──────────────────────────────────────────────────────────
     private IMasterService?    _service;
     private IMasterDbService?  _dbService;
+    /*常见用法：
+    你创建 cts = new CancellationTokenSource()
+    把 cts.Token 传给异步任务/循环
+    需要停止时调用 cts.Cancel()
+    任务里检测到 token.IsCancellationRequested 或 ThrowIfCancellationRequested() 后退出
+    */
     private CancellationTokenSource? _cts;
     private CancellationTokenSource? _syncCts;   // 绿点 DB 同步循环独立 CTS
     private Task?              _pollTask;
@@ -157,6 +165,7 @@ public partial class MasterViewModel : ObservableObject
         _inMemoryStations = new();
     private int _nextTempId = -1;
 
+    /// <summary>构造函数,刷新Port IP</summary>
     public MasterViewModel()
     {
         RefreshComPorts();
@@ -178,7 +187,8 @@ public partial class MasterViewModel : ObservableObject
         try
         {
             DbStatusText  = "连接中...";
-            _dbService    = new MasterDbService(DbConnectionString);
+            // 连接数据库并初始化表（如果尚未初始化）
+            _dbService = new MasterDbService(DbConnectionString);
             await _dbService.InitializeAsync();
             IsDbConnected = true;
             DbStatusText  = "数据库已连接";
@@ -213,6 +223,9 @@ public partial class MasterViewModel : ObservableObject
             _service = Protocol == ProtocolType.Tcp ? new TcpMasterService() : (IMasterService)new RtuMasterService();
 
             _cts = new CancellationTokenSource();
+            // I/O 密集型 -> 异步 async / await
+            // CPU 密集型(计算) -> 多线程 Task.Run
+            // 异步，连接时保证UI线程不被阻塞 详情看 \知识积累\多线程与异步理解.md
             await _service.ConnectAsync(endpoint, _cts.Token);
             IsConnected = true;
             StatusText  = Protocol == ProtocolType.Tcp
@@ -620,6 +633,7 @@ public partial class MasterViewModel : ObservableObject
         AvailableComPorts.Clear();
         foreach (var p in SerialPort.GetPortNames())
             AvailableComPorts.Add(p);
+        // 如果有串口，且当前 ComPort 不在新列表里（比如设备拔掉了），就自动切到第一个可用串口。
         if (AvailableComPorts.Count > 0 && !AvailableComPorts.Contains(ComPort))
             ComPort = AvailableComPorts[0];
     }
@@ -628,9 +642,10 @@ public partial class MasterViewModel : ObservableObject
     public void RefreshAvailableHosts()
     {
         AvailableHosts.Clear();
-        AvailableHosts.Add("127.0.0.1");
+        AvailableHosts.Add("172.168.3.100");
         try
         {
+            // 枚举所有活跃网卡的 IPv4 地址，排除环回和非活动接口
             foreach (var iface in NetworkInterface.GetAllNetworkInterfaces()
                 .Where(i => i.OperationalStatus == OperationalStatus.Up
                          && i.NetworkInterfaceType != NetworkInterfaceType.Loopback))
@@ -653,7 +668,59 @@ public partial class MasterViewModel : ObservableObject
     }
 
     [RelayCommand]
-    public void ClearLog() => LogEntries.Clear();
+    public void ClearLog()
+    {
+        if (!VerifyPassword())
+        {
+            AddLog(LogLevel.Warn, "密码错误，取消删除操作");
+            return;
+        }
+
+        // 先清空界面日志
+        LogEntries.Clear();
+
+        try
+        {
+            // 刷新 NLog 写入缓冲，确保所有内容已落盘
+            NLog.LogManager.Flush();
+
+            string logDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs");
+            int deleted = 0;
+            var failed  = new List<string>();
+
+            if (Directory.Exists(logDir))
+            {
+                foreach (var file in Directory.GetFiles(logDir, "*.log"))
+                {
+                    try
+                    {
+                        File.Delete(file);
+                        deleted++;
+                    }
+                    catch
+                    {
+                        failed.Add(Path.GetFileName(file));
+                    }
+                }
+            }
+
+            if (failed.Count == 0)
+                AddLog(LogLevel.Info,
+                    deleted > 0
+                        ? $"已删除 {deleted} 个日志文件 → {logDir}"
+                        : "日志目录为空，无文件需删除");
+            else
+                AddLog(LogLevel.Warn,
+                    $"已删除 {deleted} 个，以下文件被占用无法删除：{string.Join("、", failed)}");
+        }
+        catch (Exception ex)
+        {
+            AddLog(LogLevel.Error, $"删除日志文件失败：{ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    public void ClearLogUi() => LogEntries.Clear();
 
     // ====================================================================
     // 轮询循环（由 MasterViewModel 驱动，不在 Service 内）

@@ -20,7 +20,7 @@ public partial class SaveStationDialogViewModel : ObservableObject
     // ── 站点基本信息 ──────────────────────────────────────────────────────
     [ObservableProperty] private string _stationName   = string.Empty;
     [ObservableProperty] private int    _protocol      = 0; // 0=TCP 1=RTU
-    [ObservableProperty] private string _host          = "127.0.0.1";
+    [ObservableProperty] private string _host          = "172.168.3.100";
     [ObservableProperty] private int    _port          = 502;
     [ObservableProperty] private string _portName      = "COM3";
     [ObservableProperty] private int    _baudRate      = 9600;

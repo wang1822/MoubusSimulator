@@ -108,7 +108,7 @@
                             Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0"/>
                     <Button Content="📊 导出数据" Command="{Binding ExportPollDataCommand}"
                             Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0"/>
-                    <Button Content="🗒 清空日志" Command="{Binding ClearLogCommand}"
+                    <Button Content="🗑 删除日志文件" Command="{Binding ClearLogCommand}"
                             Style="{StaticResource SecondaryButtonStyle}"/>
                 </WrapPanel>
 
@@ -498,7 +498,7 @@
                                    Foreground="{StaticResource TextSecondaryBrush}"
                                    FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
                         <Button DockPanel.Dock="Right" Content="清空" Width="50" Height="22"
-                                Command="{Binding ClearLogCommand}"
+                                Command="{Binding ClearLogUiCommand}"
                                 Style="{StaticResource SecondaryButtonStyle}"
                                 FontSize="11" Padding="4,0"/>
                     </DockPanel>

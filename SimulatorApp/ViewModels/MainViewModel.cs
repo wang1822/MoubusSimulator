@@ -56,7 +56,7 @@ public partial class MainViewModel : ObservableObject
     // 标题栏信息
     // ----------------------------------------------------------------
 
-    public string Title => "GS215 EMS 设备故障模拟器 v1.0";
+    public string Title => "EMS设备主从ModBus";
 
     // ----------------------------------------------------------------
     // 构造
