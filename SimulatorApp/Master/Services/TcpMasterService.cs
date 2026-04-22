@@ -33,16 +33,25 @@ public class TcpMasterService : IMasterService
         AppLogger.Info($"TCP 主站已连接 → {endpoint.Host}:{endpoint.Port}  SlaveId={endpoint.SlaveId}");
     }
 
+    // 读寄存器
     public async Task<ushort[]> ReadRegistersAsync(int startAddress, int quantity)
     {
+        // 检查连接状态和参数合法性，避免在锁内执行无效操作导致长时间占用连接。
         EnsureConnected();
+        // 检查地址 数量
         ValidateAddressAndQuantity(startAddress, quantity, 125, "FC03 读取");
-
+        /*ConfigureAwait(false) 就是告诉它：不用回原上下文，在哪个线程可用就在哪继续。
+        好处：
+        少一次上下文切换，性能更好
+        降低“同步阻塞 + await”造成死锁的风险
+        适合库 / 服务层代码（不依赖 UI 控件）*/
         await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
+            // 获取寄存器值 !的意思是我确定 _master 这里不是 null，编译器别再给我可空警告
+            // 获取的是一段寄存器值 起始地址 + 数量
             return await Task.Run(() =>
-                _master!.ReadHoldingRegisters(_endpoint!.SlaveId, (ushort)startAddress, (ushort)quantity))
+                _master!.ReadHoldingRegistersAsync(_endpoint!.SlaveId, (ushort)startAddress, (ushort)quantity))
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -118,12 +127,14 @@ public class TcpMasterService : IMasterService
 
     public async ValueTask DisposeAsync() => await DisconnectAsync();
 
+    // 未连接时抛出异常，避免执行无效操作并提供明确错误信息。
     private void EnsureConnected()
     {
         if (_master == null || _endpoint == null || _client == null)
             throw new InvalidOperationException("尚未连接");
     }
 
+    // 验证地址和数量参数，确保在 Modbus 协议允许的范围内，避免无效请求和潜在的通信错误。
     private static void ValidateAddressAndQuantity(int startAddress, int quantity, int maxQuantity, string operation)
     {
         if (startAddress < 0 || startAddress > ushort.MaxValue)

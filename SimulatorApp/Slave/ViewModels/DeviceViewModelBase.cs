@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SimulatorApp.Shared.Logging;
 using SimulatorApp.Shared.Services;
@@ -51,6 +51,9 @@ public abstract partial class DeviceViewModelBase : ObservableObject
 
     /// <summary>设备中文名（显示在左侧列表和 Expander 标题）</summary>
     public abstract string DeviceName { get; }
+
+    /// <summary>true 表示该设备由协议文档导入，左侧列表将其放入折叠区</summary>
+    public virtual bool IsImported => false;
 
     /// <summary>该设备对应的 Model 实例（用于批量刷新寄存器）</summary>
     protected abstract DeviceModelBase Model { get; }

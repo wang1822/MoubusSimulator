@@ -16,6 +16,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 
+// Row type alias for protocol import tuples
+using ProtocolRow = (string ChineseName, string EnglishName, int Address, string ReadWrite, string Range, string Unit, string Note);
+
 namespace SimulatorApp.Slave.ViewModels;
 
 /// <summary>
@@ -46,6 +49,17 @@ public partial class SlaveViewModel : ObservableObject
     // ----------------------------------------------------------------
 
     public ObservableCollection<DeviceViewModelBase> DeviceList { get; } = new();
+    public ObservableCollection<ImportedDeviceViewModel> ImportedDevices { get; } = new();
+    public bool HasImportedDevices => ImportedDevices.Count > 0;
+    public ObservableCollection<DeviceViewModelBase> BuiltinDevices { get; } = new();
+    public IReadOnlyList<DeviceViewModelBase> InspectorList { get; private set; } = [];
+
+    // ── DB 持久化 ────────────────────────────────────────────────────
+    [ObservableProperty] private string _slaveDbConnectionString =
+        "Server=10.184.4.153,1433;Database=ModBusT;User Id=sa;Password=000000;Encrypt=True;TrustServerCertificate=True;Connect Timeout=10;";
+    [ObservableProperty] private bool   _isSlaveDbConnected = false;
+    [ObservableProperty] private string _slaveDbStatusText  = "未连接数据库";
+    private ISlaveProtocolDbService? _slaveDbService;
 
     [ObservableProperty] private DeviceViewModelBase? _selectedDevice;
 
@@ -138,6 +152,7 @@ public partial class SlaveViewModel : ObservableObject
         RegisterDevice(dieselVm,    vm => new DieselGeneratorPanel  { DataContext = vm });
         RegisterDevice(gasVm,       vm => new GasDetectorPanel      { DataContext = vm });
         RegisterDevice(inspectorVm, vm => new RegisterInspectorPanel{ DataContext = vm });
+        InspectorList = [inspectorVm];
 
         SelectedDevice = DeviceList.FirstOrDefault();
 
@@ -161,6 +176,8 @@ public partial class SlaveViewModel : ObservableObject
     private void RegisterDevice(DeviceViewModelBase vm, Func<DeviceViewModelBase, UserControl> panelFactory)
     {
         DeviceList.Add(vm);
+        if (vm is not RegisterInspectorViewModel)
+            BuiltinDevices.Add(vm);
         _panelFactories[vm.GetType()] = panelFactory;
         try   { _panelCache[vm] = panelFactory(vm); }
         catch (Exception ex) { AppLogger.Error($"[RegisterDevice] 面板创建失败：{vm.DeviceName} — {ex.Message}", ex); }
@@ -328,148 +345,132 @@ public partial class SlaveViewModel : ObservableObject
     }
 
     // ----------------------------------------------------------------
-    // 命令：导出设备 Excel（所有已勾选设备 → 多 Sheet）
+    // 命令：协议文档格式导入（粘贴 / 文件）
     // ----------------------------------------------------------------
 
     [RelayCommand]
-    public void ImportDeviceExcel()
+    public async Task ConnectSlaveDbAsync()
     {
-        var dlg = new OpenFileDialog
+        if (string.IsNullOrWhiteSpace(SlaveDbConnectionString))
         {
-            Filter = "Excel 文件|*.xlsx;*.xls",
-            Title  = "选择要导入的设备 Excel 文件"
-        };
-        if (dlg.ShowDialog() != true) return;
-        try
-        {
-            var (deviceName, rows) = ExcelHelper.ParseRowsFromFile(dlg.FileName);
-            if (rows.Count == 0)
-            {
-                ThemedMessageBox.Show("文件中未找到有效数据行。\n请确认文件格式与导出格式一致（第5行起为数据行）。",
-                    "导入失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-            AddImportedDevice(deviceName, rows);
-            AppLogger.Info($"已导入 {deviceName}（{rows.Count} 行）← {dlg.FileName}");
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Error($"导入失败：{ex.Message}", ex);
-            ThemedMessageBox.Show($"导入失败：\n{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    [RelayCommand]
-    public void ExportDeviceExcel()
-    {
-        var checkedDevices = DeviceList.Where(v => v.IsSimulating).ToList();
-        if (checkedDevices.Count == 0)
-        {
-            ThemedMessageBox.Show("没有已勾选的设备，无法导出。\n请先勾选至少一个设备。",
-                "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            SlaveDbStatusText = "请输入连接字符串";
             return;
         }
-        var dlg = new Microsoft.Win32.OpenFolderDialog
-        {
-            Title = $"选择导出目录（将保存 {checkedDevices.Count} 个设备的 Excel 文件）"
-        };
-        if (dlg.ShowDialog() != true) return;
         try
         {
-            var saved = ExcelHelper.ExportDeviceViewModelsToFolder(dlg.FolderName, checkedDevices);
-            AppLogger.Info($"设备 Excel 已导出（{saved.Count} 个文件）→ {dlg.FolderName}");
-            ThemedMessageBox.Show($"已导出 {saved.Count} 个文件至：\n{dlg.FolderName}",
-                "导出完成", MessageBoxButton.OK, MessageBoxImage.Information);
+            SlaveDbStatusText = "连接中…";
+            var svc = new SlaveProtocolDbService(SlaveDbConnectionString);
+            await svc.InitializeAsync();
+            _slaveDbService   = svc;
+            IsSlaveDbConnected = true;
+            SlaveDbStatusText  = "数据库已连接";
+            AppLogger.Info("从站协议 DB 连接成功");
+            await LoadProtocolDevicesFromDbAsync();
         }
         catch (Exception ex)
         {
-            AppLogger.Error($"导出失败：{ex.Message}", ex);
-            ThemedMessageBox.Show($"导出失败：\n{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            IsSlaveDbConnected = false;
+            SlaveDbStatusText  = $"连接失败：{ex.Message}";
+            AppLogger.Error($"从站协议 DB 连接失败：{ex.Message}", ex);
         }
     }
 
+    private async Task LoadProtocolDevicesFromDbAsync()
+    {
+        if (_slaveDbService == null) return;
+        try
+        {
+            var devices = await _slaveDbService.GetAllDevicesAsync();
+            foreach (var (name, rows) in devices)
+                AddProtocolDevice(name, rows, saveToDb: false);
+            if (devices.Count > 0)
+                AppLogger.Info($"已从数据库加载 {devices.Count} 个协议设备");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error($"加载协议设备失败：{ex.Message}", ex);
+        }
+    }
+
+    /// <summary>创建协议文档导入设备 ViewModel，追加到列表并自动选中</summary>
+    private void AddProtocolDevice(string deviceName,
+        IEnumerable<ProtocolRow> rows,
+        bool saveToDb = true)
+    {
+        var rowList = rows.ToList();
+        var bank    = _services.GetRequiredService<RegisterBank>();
+        var mapSvc  = _services.GetRequiredService<RegisterMapService>();
+        var vm      = new ImportedDeviceViewModel(bank, mapSvc, deviceName, rowList);
+        _panelCache[vm] = new ImportedDevicePanel { DataContext = vm };
+        DeviceList.Add(vm);
+        ImportedDevices.Add(vm);
+        OnPropertyChanged(nameof(HasImportedDevices));
+        SelectedDevice = vm;
+
+        if (saveToDb && _slaveDbService != null)
+            _ = _slaveDbService.UpsertDeviceAsync(vm.DeviceName, rowList);
+    }
+
     [RelayCommand]
-    public void PasteImportDevice()
+    public void PasteImportProtocol()
     {
         var text = Clipboard.GetText();
         if (string.IsNullOrWhiteSpace(text))
         {
-            ThemedMessageBox.Show("剪贴板为空，请先在 Excel 中选中并复制数据行，再点此按钮。",
+            ThemedMessageBox.Show(
+                "剪贴板为空。\n请先在 Excel 协议文档中选中寄存器行（含标题行）并复制，再点此按钮。",
                 "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         try
         {
-            var rows = ExcelHelper.ParseRowsFromClipboard(text);
+            var rows = ExcelHelper.ParseProtocolRowsFromClipboard(text);
             if (rows.Count == 0)
             {
-                ThemedMessageBox.Show("未解析到有效数据行。\n请确认已复制含「地址」列和「值」列的表格数据。",
+                ThemedMessageBox.Show(
+                    "未解析到有效数据行。\n请确认复制了含「Addr」标题行的协议表格（格式：Addr | 中文名 | 英文名 | R/W | 范围 | 单位 | 备注）。",
                     "解析失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            AddImportedDevice("粘贴数据", rows);
-            AppLogger.Info($"已从剪贴板导入（{rows.Count} 行）");
+            AddProtocolDevice("协议导入", rows);
+            AppLogger.Info($"已从剪贴板导入协议格式（{rows.Count} 行）");
         }
         catch (Exception ex)
         {
-            AppLogger.Error($"粘贴导入失败：{ex.Message}", ex);
-            ThemedMessageBox.Show($"粘贴导入失败：\n{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            AppLogger.Error($"粘贴协议导入失败：{ex.Message}", ex);
+            ThemedMessageBox.Show($"粘贴协议导入失败：\n{ex.Message}", "错误",
+                MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
-    /// <summary>创建导入设备 ViewModel，追加到列表底部并自动选中</summary>
-    private void AddImportedDevice(string deviceName,
-        IEnumerable<(string ChineseName, int Address, double Value)> rows)
-    {
-        var bank   = _services.GetRequiredService<RegisterBank>();
-        var mapSvc = _services.GetRequiredService<RegisterMapService>();
-        var vm     = new ImportedDeviceViewModel(bank, mapSvc, deviceName, rows);
-        _panelCache[vm] = new ImportedDevicePanel { DataContext = vm };
-        DeviceList.Add(vm);
-        SelectedDevice = vm;
-    }
-
-    // ----------------------------------------------------------------
-    // 命令：快照
-    // ----------------------------------------------------------------
-
     [RelayCommand]
-    public void ExportSnapshot()
+    public void ImportProtocolExcel()
     {
-        var dlg = new SaveFileDialog
+        var dlg = new OpenFileDialog
         {
-            Filter   = "JSON 快照|*.json",
-            FileName = $"Snapshot_{DateTime.Now:yyyyMMdd_HHmmss}.json"
+            Filter = "Excel 文件|*.xlsx;*.xls",
+            Title  = "选择协议文档 Excel（如 MPPT_Modbus_V1.0.xlsx）"
         };
         if (dlg.ShowDialog() != true) return;
         try
         {
-            var checkedDevices = DeviceList.Where(v => v.IsSimulating).ToList();
-            if (checkedDevices.Count == 0)
+            var (deviceName, rows) = ExcelHelper.ParseProtocolRowsFromFile(dlg.FileName);
+            if (rows.Count == 0)
             {
-                ThemedMessageBox.Show("没有已勾选的设备，无法导出快照。\n请先勾选至少一个设备。",
-                    "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                ThemedMessageBox.Show(
+                    "文件中未找到有效协议数据行。\n请确认文件中存在「Addr | 中文名 | 英文名 | R/W | 范围 | 单位 | 备注」格式的寄存器表。",
+                    "导入失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            var mapSvc = _services.GetRequiredService<RegisterMapService>();
-            mapSvc.SaveSnapshot(dlg.FileName, checkedDevices);
-            AppLogger.Info($"快照已导出（{checkedDevices.Count} 个设备）→ {dlg.FileName}");
+            AddProtocolDevice(deviceName, rows);
+            AppLogger.Info($"已导入协议文档 {deviceName}（{rows.Count} 行）← {dlg.FileName}");
         }
-        catch (Exception ex) { AppLogger.Error($"快照导出失败：{ex.Message}", ex); }
-    }
-
-    [RelayCommand]
-    public void ImportSnapshot()
-    {
-        var dlg = new OpenFileDialog { Filter = "JSON 快照|*.json" };
-        if (dlg.ShowDialog() != true) return;
-        try
+        catch (Exception ex)
         {
-            var mapSvc = _services.GetRequiredService<RegisterMapService>();
-            mapSvc.LoadSnapshot(dlg.FileName, DeviceList);
-            AppLogger.Info($"快照已导入 ← {dlg.FileName}");
+            AppLogger.Error($"协议 Excel 导入失败：{ex.Message}", ex);
+            ThemedMessageBox.Show($"协议 Excel 导入失败：\n{ex.Message}", "错误",
+                MessageBoxButton.OK, MessageBoxImage.Error);
         }
-        catch (Exception ex) { AppLogger.Error($"快照导入失败：{ex.Message}", ex); }
     }
 
     // ----------------------------------------------------------------

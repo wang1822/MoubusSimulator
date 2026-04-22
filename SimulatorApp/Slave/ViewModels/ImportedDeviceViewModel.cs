@@ -6,7 +6,7 @@ using System.Collections.ObjectModel;
 namespace SimulatorApp.Slave.ViewModels;
 
 /// <summary>
-/// 从 Excel/剪贴板直接导入的通用寄存器行数据 ViewModel。
+/// 从协议文档导入的通用寄存器行数据 ViewModel。
 /// 不绑定任何具体设备模型，仅作展示用。
 /// </summary>
 public class ImportedDeviceViewModel : DeviceViewModelBase
@@ -31,20 +31,21 @@ public class ImportedDeviceViewModel : DeviceViewModelBase
     /// <summary>解析后的寄存器行，供面板 DataGrid 绑定</summary>
     public ObservableCollection<ImportedRegisterRow> Rows { get; } = new();
 
+    /// <summary>从协议文档格式（地址|中文名|英文名|读写|单位|描述）构��</summary>
     public ImportedDeviceViewModel(
         RegisterBank       bank,
         RegisterMapService mapSvc,
         string             deviceName,
-        IEnumerable<(string ChineseName, int Address, double Value)> rows)
+        IEnumerable<(string ChineseName, string EnglishName, int Address, string ReadWrite, string Range, string Unit, string Note)> rows)
         : base(bank, mapSvc)
     {
         int n = System.Threading.Interlocked.Increment(ref _counter);
-        DeviceName = string.IsNullOrWhiteSpace(deviceName) ? $"导入数据 #{n}" : $"{deviceName} #{n}";
-        foreach (var (name, addr, val) in rows)
-            Rows.Add(new ImportedRegisterRow(name, addr, val));
+        DeviceName = string.IsNullOrWhiteSpace(deviceName) ? $"协议导入 #{n}" : $"{deviceName} #{n}";
+        foreach (var (chinese, english, addr, rw, range, unit, note) in rows)
+            Rows.Add(new ImportedRegisterRow(chinese, english, addr, rw, range, unit, note));
     }
 
-    // 无随机数据、无告警，均为空操作
+    public override bool IsImported => true;
     public override void GenerateData() { }
     public override void ClearAlarms()  { }
 }
@@ -53,15 +54,23 @@ public class ImportedDeviceViewModel : DeviceViewModelBase
 public sealed class ImportedRegisterRow
 {
     public string ChineseName { get; }
+    public string EnglishName { get; }
     public int    Address     { get; }
     public string AddressHex  => $"0x{Address:X4}";
-    public int    ValueDec    { get; }
-    public string ValueHex    => $"0x{ValueDec:X4}";
+    public string ReadWrite   { get; }
+    public string Range       { get; }
+    public string Unit        { get; }
+    public string Note        { get; }
 
-    public ImportedRegisterRow(string chineseName, int address, double value)
+    public ImportedRegisterRow(string chineseName, string englishName, int address,
+                                string readWrite, string range, string unit, string note)
     {
         ChineseName = chineseName;
+        EnglishName = englishName ?? string.Empty;
         Address     = address;
-        ValueDec    = (int)value;
+        ReadWrite   = readWrite   ?? string.Empty;
+        Range       = range       ?? string.Empty;
+        Unit        = unit        ?? string.Empty;
+        Note        = note        ?? string.Empty;
     }
 }

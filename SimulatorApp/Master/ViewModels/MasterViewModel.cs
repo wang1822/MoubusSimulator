@@ -222,6 +222,8 @@ public partial class MasterViewModel : ObservableObject
             var endpoint = BuildEndpoint();
             _service = Protocol == ProtocolType.Tcp ? new TcpMasterService() : (IMasterService)new RtuMasterService();
 
+
+            // 取消信号发射器
             _cts = new CancellationTokenSource();
             // I/O 密集型 -> 异步 async / await
             // CPU 密集型(计算) -> 多线程 Task.Run
@@ -317,8 +319,10 @@ public partial class MasterViewModel : ObservableObject
         {
             Owner = Application.Current.MainWindow
         };
+        // 用户不操作则停在这步，同步阻塞
         dlg.ShowDialog();
 
+        // DialogResult 只有用户点击「保存」才为 true，点击「取消」或关闭窗口则为 false
         if (!vm.DialogResult) return Task.CompletedTask;
 
         var (station, configs) = vm.BuildResult();
@@ -739,6 +743,7 @@ public partial class MasterViewModel : ObservableObject
                     ushort[]? regs = null;
                     try
                     {
+                        // 轮询读取当前组地址段的寄存器值
                         regs = await _service!.ReadRegistersAsync(group.StartAddress, group.Length)
                                               .ConfigureAwait(false);
                     }
@@ -1017,8 +1022,10 @@ public partial class MasterViewModel : ObservableObject
             var groupRows = new List<RegisterDisplayRow> { sorted[i] };
             int gStart    = sorted[i].StartAddress;
             // 单行 Quantity 超过 MAX_REGS 时截断，避免 FC03 帧超长
+            // IF Quantity > MAX_REGS THEN  FC03 读取会被从站拒绝（SlaveException），需要分多行读
             int gEnd      = sorted[i].StartAddress + Math.Min(sorted[i].Quantity, MAX_REGS);
 
+            // 并入后续行：地址间隔 ≤ GAP，且合并后长度 ≤ MAX_REGS
             while (i + 1 < sorted.Count)
             {
                 var next    = sorted[i + 1];
@@ -1087,18 +1094,31 @@ public partial class MasterViewModel : ObservableObject
         PollIntervalMs = PollIntervalMs
     };
 
+    /// <summary>
+    /// 当 DataGrid 中某一行的属性发生变化时触发（实现内联编辑自动保存）。
+    /// </summary>
     private async void OnRowPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        // 1. 类型安全校验：确保触发事件的对象是我们预期的 RegisterDisplayRow
         if (sender is not RegisterDisplayRow row) return;
+
+        // 2. 过滤属性：只拦截用户编辑了“中文名”或“变量名”的事件。
+        // （非常关键：防止轮询自动更新 PhysicalValue/LastUpdated 时也乱触发写库操作）
         if (e.PropertyName != nameof(RegisterDisplayRow.ChineseName) &&
             e.PropertyName != nameof(RegisterDisplayRow.VariableName)) return;
+
+        // 3. 拦截无效条件：
+        // 如果未连接数据库（_dbService == null），或该行属于还没落库的临时记录（RegisterConfigId <= 0），则不执行保存
         if (_dbService == null || row.RegisterConfigId <= 0) return;
+
         try
         {
+            // 4. 异步保存：把修改后的最新名称静默写入到数据库中
             await _dbService.UpdateRegisterNamesAsync(row.RegisterConfigId, row.ChineseName, row.VariableName);
         }
         catch (Exception ex)
         {
+            // 5. 异常处理：保存失败时不弹窗打断用户的连续输入，只是回到 UI 线程在底部控制台输出警告日志
             _dispatcher.InvokeAsync(() => AddLog(LogLevel.Warn, $"名称保存失败：{ex.Message}"));
         }
     }
@@ -1134,11 +1154,14 @@ public partial class MasterViewModel : ObservableObject
         {
             try
             {
+                //3.	支持取消 (ct)：ct 是一个 CancellationToken。如果在这一秒等待期间，
+                //用户点击了“断开连接”或者切换了站点，代码里调用了 _syncCts.Cancel()，
+                //这个 Task.Delay 会立刻抛出 OperationCanceledException 中断等待，从而退出 while 循环，干脆利落。
                 await Task.Delay(1000, ct);
 
                 if (_dbService == null) continue;
 
-                // UI 线程快照：只取已存入 DB 的行（RegisterConfigId > 0）
+                // UI 线程快照：只取已存入 DB 的行（RegisterConfigId > 0）  InvokeAsync 派发回 UI 线程去读，避免跨线程访问冲突
                 var snapshot = await _dispatcher.InvokeAsync(() =>
                     TelemeterRows.Concat(ControlRows)
                                  .Where(r => r.RegisterConfigId > 0)
@@ -1168,6 +1191,7 @@ public partial class MasterViewModel : ObservableObject
 }
 
 /// <summary>轮询地址段（连续地址范围 + 属于该段的所有显示行）</summary>
+/// internal 限定仅 MasterViewModel 可见，避免外部误用 sealed 不可继承 record 值语义类型（封装字段）
 internal sealed record PollGroup(int StartAddress, int Length, List<RegisterDisplayRow> Rows);
 
 /// <summary>通用 ComboBox 数据项</summary>
