@@ -77,25 +77,23 @@ public static class ExcelHelper
 
     /// <summary>
     /// 从剪贴板 TSV 文本解析 Modbus 协议文档寄存器数据。
-    /// 固定 6 列顺序：地址|中文名|英文名|读写|单位|描述；
-    /// 若首行包含列名标题则自动定位各列。
+    /// 支持 Excel 复制的带引号多行单元格（Alt+Enter 换行）。
     /// </summary>
     public static List<(string ChineseName, string EnglishName, int Address, string ReadWrite, string Range, string Unit, string Note)>
         ParseProtocolRowsFromClipboard(string clipboardText)
     {
         var result = new List<(string, string, int, string, string, string, string)>();
-        var lines = clipboardText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length == 0) return result;
+        var rows = ParseTsvRows(clipboardText);
+        if (rows.Count == 0) return result;
 
         // 固定 7 列默认映射：地址=0, 中文=1, 英文=2, 读写=3, 范围=4, 单位=5, 描述=6
         int addrCol = 0, chineseCol = 1, englishCol = 2, rwCol = 3, rangeCol = 4, unitCol = 5, noteCol = 6;
         int headerIdx = -1;
 
         // 尝试在前 10 行中找标题行
-        for (int i = 0; i < Math.Min(lines.Length, 10); i++)
+        for (int i = 0; i < Math.Min(rows.Count, 10); i++)
         {
-            var hcols = lines[i].Split('\t');
-            // 若首列能解析为地址（纯整数 / 0x前缀 / H后缀），说明是数据行而非标题行
+            var hcols = rows[i];
             if (hcols.Length > 0 && TryParseAddress(hcols[0].Trim(), out _)) continue;
             int tempAddr = FindColIndex(hcols, IsAddrHeader);
             if (tempAddr < 0) continue;
@@ -103,19 +101,19 @@ public static class ExcelHelper
             headerIdx = i;
             addrCol = tempAddr;
             int c;
-            c = FindColIndex(hcols, IsChineseHeader);  if (c >= 0) chineseCol = c;
-            c = FindColIndex(hcols, IsEnglishHeader);  if (c >= 0) englishCol = c;
+            c = FindColIndex(hcols, IsChineseHeader);   if (c >= 0) chineseCol = c;
+            c = FindColIndex(hcols, IsEnglishHeader);   if (c >= 0) englishCol = c;
             c = FindColIndex(hcols, IsReadWriteHeader); if (c >= 0) rwCol      = c;
-            c = FindColIndex(hcols, IsRangeHeader);    if (c >= 0) rangeCol   = c;
-            c = FindColIndex(hcols, IsUnitHeader);     if (c >= 0) unitCol    = c;
-            c = FindColIndex(hcols, IsNoteHeader);     if (c >= 0) noteCol    = c;
+            c = FindColIndex(hcols, IsRangeHeader);     if (c >= 0) rangeCol   = c;
+            c = FindColIndex(hcols, IsUnitHeader);      if (c >= 0) unitCol    = c;
+            c = FindColIndex(hcols, IsNoteHeader);      if (c >= 0) noteCol    = c;
             break;
         }
 
         int startRow = headerIdx >= 0 ? headerIdx + 1 : 0;
-        for (int i = startRow; i < lines.Length; i++)
+        for (int i = startRow; i < rows.Count; i++)
         {
-            var cols = lines[i].Split('\t');
+            var cols = rows[i];
             if (addrCol >= cols.Length) continue;
             if (!TryParseAddress(cols[addrCol].Trim(), out int addr)) continue;
 
@@ -132,6 +130,72 @@ public static class ExcelHelper
                 SafeGet(cols, noteCol).Trim()));
         }
         return result;
+    }
+
+    /// <summary>
+    /// RFC 4180 兼容的 TSV 解析器。
+    /// 正确处理 Excel 复制产生的带双引号包裹的多行单元格（Alt+Enter）。
+    /// </summary>
+    private static List<string[]> ParseTsvRows(string text)
+    {
+        var rows   = new List<string[]>();
+        var fields = new List<string>();
+        var sb     = new System.Text.StringBuilder();
+        int i      = 0;
+
+        while (i < text.Length)
+        {
+            char ch = text[i];
+
+            if (ch == '"')
+            {
+                // 引号字段：消费到配对的闭合引号
+                i++;
+                while (i < text.Length)
+                {
+                    if (text[i] == '"')
+                    {
+                        // "" 转义为单个引号
+                        if (i + 1 < text.Length && text[i + 1] == '"')
+                        { sb.Append('"'); i += 2; }
+                        else
+                        { i++; break; }   // 闭合引号
+                    }
+                    else
+                    {
+                        sb.Append(text[i++]);
+                    }
+                }
+            }
+            else if (ch == '\t')
+            {
+                fields.Add(sb.ToString());
+                sb.Clear();
+                i++;
+            }
+            else if (ch == '\r' || ch == '\n')
+            {
+                fields.Add(sb.ToString());
+                sb.Clear();
+                if (fields.Exists(f => f.Length > 0))
+                    rows.Add([.. fields]);
+                fields.Clear();
+                if (ch == '\r' && i + 1 < text.Length && text[i + 1] == '\n') i++;
+                i++;
+            }
+            else
+            {
+                sb.Append(ch);
+                i++;
+            }
+        }
+
+        // 最后一行（无结尾换行符）
+        fields.Add(sb.ToString());
+        if (fields.Exists(f => f.Length > 0))
+            rows.Add([.. fields]);
+
+        return rows;
     }
 
     /// <summary>

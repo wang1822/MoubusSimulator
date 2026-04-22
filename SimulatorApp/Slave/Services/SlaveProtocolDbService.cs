@@ -35,13 +35,19 @@ public class SlaveProtocolDbService : ISlaveProtocolDbService
                 ChineseName NVARCHAR(200) NOT NULL DEFAULT '',
                 EnglishName NVARCHAR(200) NOT NULL DEFAULT '',
                 ReadWrite   NVARCHAR(20)  NOT NULL DEFAULT '',
-                Range       NVARCHAR(200) NOT NULL DEFAULT '',
-                Unit        NVARCHAR(50)  NOT NULL DEFAULT '',
-                Note        NVARCHAR(500) NOT NULL DEFAULT '',
-                CreatedAt   DATETIME2     NOT NULL DEFAULT GETDATE()
+                Range       NVARCHAR(2000) NOT NULL DEFAULT '',
+                Unit        NVARCHAR(50)   NOT NULL DEFAULT '',
+                Note        NVARCHAR(2000) NOT NULL DEFAULT '',
+                CreatedAt   DATETIME2      NOT NULL DEFAULT GETDATE()
             );
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('SlaveProtocolRows') AND name='Range')
-                ALTER TABLE SlaveProtocolRows ADD [Range] NVARCHAR(200) NOT NULL DEFAULT '';
+                ALTER TABLE SlaveProtocolRows ADD [Range] NVARCHAR(2000) NOT NULL DEFAULT '';
+            IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('SlaveProtocolRows') AND name='Range'
+                       AND max_length < 4000)
+                ALTER TABLE SlaveProtocolRows ALTER COLUMN [Range] NVARCHAR(2000) NOT NULL;
+            IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('SlaveProtocolRows') AND name='Note'
+                       AND max_length < 4000)
+                ALTER TABLE SlaveProtocolRows ALTER COLUMN [Note] NVARCHAR(2000) NOT NULL;
             """;
         await using var cmd = new SqlCommand(ddl, conn);
         await cmd.ExecuteNonQueryAsync();
