@@ -16,11 +16,13 @@
                        FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </Border>
 
-        <!-- 寄存器表格 -->
+        <!-- 寄存器表格：行虚拟化保持默认 True，SelectionUnit=Cell 允许 Ctrl+C 复制单元格内容 -->
         <DataGrid Grid.Row="1"
                   ItemsSource="{Binding Rows}"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
+                  SelectionUnit="Cell"
+                  CanUserResizeRows="True"
                   Background="{StaticResource BackgroundBrush}"
                   Foreground="{StaticResource TextPrimaryBrush}"
                   RowBackground="{StaticResource BackgroundBrush}"
@@ -28,16 +30,49 @@
                   BorderThickness="0"
                   GridLinesVisibility="Horizontal"
                   HorizontalGridLinesBrush="{StaticResource BorderBrush}"
-                  CanUserResizeRows="False"
                   SelectionMode="Single">
+
+            <!-- 行悬停 Tooltip：用 Tag={Binding} 绕过行虚拟化 DataContext 刷新 Bug -->
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Setter Property="Tag" Value="{Binding}"/>
+                    <Setter Property="ToolTip">
+                        <Setter.Value>
+                            <ToolTip Background="#1E293B" BorderBrush="#334155" BorderThickness="1"
+                                     DataContext="{Binding PlacementTarget.Tag,
+                                                  RelativeSource={RelativeSource Self}}">
+                                <StackPanel MaxWidth="520" Margin="6,4">
+                                    <TextBlock FontWeight="Bold" FontSize="12" Foreground="#E2E8F0"
+                                               TextWrapping="Wrap">
+                                        <Run Text="{Binding ChineseName, Mode=OneWay}"/>
+                                        <Run Foreground="#64748B" Text="  /  "/>
+                                        <Run Foreground="#94A3B8" Text="{Binding EnglishName, Mode=OneWay}"/>
+                                    </TextBlock>
+                                    <TextBlock Foreground="#94A3B8" FontSize="11" Margin="0,2,0,0">
+                                        <Run Text="地址："/><Run Text="{Binding Address,    Mode=OneWay}"/>
+                                        <Run Text="  ("/>  <Run Text="{Binding AddressHex, Mode=OneWay}"/><Run Text=")"/>
+                                        <Run Text="   读写："/><Run Text="{Binding ReadWrite, Mode=OneWay}"/>
+                                        <Run Text="   范围："/><Run Text="{Binding Range,     Mode=OneWay}"/>
+                                        <Run Text="   单位："/><Run Text="{Binding Unit,      Mode=OneWay}"/>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Note, Mode=OneWay}" TextWrapping="Wrap"
+                                               Foreground="#CBD5E1" FontSize="11"
+                                               Margin="0,6,0,0" MaxWidth="500"/>
+                                </StackPanel>
+                            </ToolTip>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </DataGrid.RowStyle>
+
             <DataGrid.ColumnHeaderStyle>
                 <Style TargetType="DataGridColumnHeader">
-                    <Setter Property="Background"   Value="#1C2033"/>
-                    <Setter Property="Foreground"   Value="{StaticResource TextSecondaryBrush}"/>
-                    <Setter Property="Padding"      Value="10,5"/>
-                    <Setter Property="FontSize"     Value="11"/>
-                    <Setter Property="FontWeight"   Value="SemiBold"/>
-                    <Setter Property="BorderBrush"  Value="{StaticResource BorderBrush}"/>
+                    <Setter Property="Background"      Value="#1C2033"/>
+                    <Setter Property="Foreground"      Value="{StaticResource TextSecondaryBrush}"/>
+                    <Setter Property="Padding"         Value="10,5"/>
+                    <Setter Property="FontSize"        Value="11"/>
+                    <Setter Property="FontWeight"      Value="SemiBold"/>
+                    <Setter Property="BorderBrush"     Value="{StaticResource BorderBrush}"/>
                     <Setter Property="BorderThickness" Value="0,0,1,1"/>
                 </Style>
             </DataGrid.ColumnHeaderStyle>
@@ -55,12 +90,37 @@
                     </Style.Triggers>
                 </Style>
             </DataGrid.CellStyle>
+
             <DataGrid.Columns>
-                <DataGridTextColumn Header="中文名"   Binding="{Binding ChineseName}" Width="*"  MinWidth="100"/>
-                <DataGridTextColumn Header="地址 Dec" Binding="{Binding Address}"     Width="90"/>
-                <DataGridTextColumn Header="地址 Hex" Binding="{Binding AddressHex}"  Width="90"/>
-                <DataGridTextColumn Header="值 Dec"   Binding="{Binding ValueDec}"    Width="90"/>
-                <DataGridTextColumn Header="值 Hex"   Binding="{Binding ValueHex}"    Width="90"/>
+                <DataGridTextColumn Header="地址"   Binding="{Binding Address,     Mode=OneWay}" Width="70"/>
+                <DataGridTextColumn Header="Hex"    Binding="{Binding AddressHex,  Mode=OneWay}" Width="70"/>
+                <DataGridTextColumn Header="中文名" Binding="{Binding ChineseName, Mode=OneWay}" Width="*"  MinWidth="100"/>
+                <DataGridTextColumn Header="英文名" Binding="{Binding EnglishName, Mode=OneWay}" Width="*"  MinWidth="80"/>
+                <DataGridTextColumn Header="读写"   Binding="{Binding ReadWrite,   Mode=OneWay}" Width="55"/>
+                <DataGridTextColumn Header="范围"   Binding="{Binding Range,       Mode=OneWay}" Width="90"/>
+                <DataGridTextColumn Header="单位"   Binding="{Binding Unit,        Mode=OneWay}" Width="55"/>
+                <!-- 描述列：单元格内折行，悬停时 Tooltip 展示完整文本 -->
+                <DataGridTemplateColumn Header="描述" Width="2*" MinWidth="120">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Note}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Top"
+                                       FontFamily="Consolas, Courier New"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextPrimaryBrush}">
+                                <!-- 独立 Tooltip 确保多行文本完整显示 -->
+                                <TextBlock.ToolTip>
+                                    <ToolTip Background="#1E293B" BorderBrush="#334155" BorderThickness="1">
+                                        <TextBlock Text="{Binding Note}"
+                                                   MaxWidth="500" TextWrapping="Wrap"
+                                                   Foreground="#E2E8F0" FontSize="12"/>
+                                    </ToolTip>
+                                </TextBlock.ToolTip>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
     </Grid>
