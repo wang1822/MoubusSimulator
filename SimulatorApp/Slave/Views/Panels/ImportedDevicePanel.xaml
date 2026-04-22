@@ -52,8 +52,11 @@
                                         <Run Text="地址："/><Run Text="{Binding Address,    Mode=OneWay}"/>
                                         <Run Text="  ("/>  <Run Text="{Binding AddressHex, Mode=OneWay}"/><Run Text=")"/>
                                         <Run Text="   读写："/><Run Text="{Binding ReadWrite, Mode=OneWay}"/>
-                                        <Run Text="   范围："/><Run Text="{Binding Range,     Mode=OneWay}"/>
                                         <Run Text="   单位："/><Run Text="{Binding Unit,      Mode=OneWay}"/>
+                                    </TextBlock>
+                                    <TextBlock Foreground="#94A3B8" FontSize="11" Margin="0,2,0,0"
+                                               TextWrapping="Wrap" MaxWidth="500">
+                                        <Run Text="范围："/><Run Text="{Binding Range, Mode=OneWay}"/>
                                     </TextBlock>
                                     <TextBlock Text="{Binding Note, Mode=OneWay}" TextWrapping="Wrap"
                                                Foreground="#CBD5E1" FontSize="11"
@@ -97,7 +100,27 @@
                 <DataGridTextColumn Header="中文名" Binding="{Binding ChineseName, Mode=OneWay}" Width="*"  MinWidth="100"/>
                 <DataGridTextColumn Header="英文名" Binding="{Binding EnglishName, Mode=OneWay}" Width="*"  MinWidth="80"/>
                 <DataGridTextColumn Header="读写"   Binding="{Binding ReadWrite,   Mode=OneWay}" Width="55"/>
-                <DataGridTextColumn Header="范围"   Binding="{Binding Range,       Mode=OneWay}" Width="90"/>
+                <!-- 范围列：折行显示 + Tooltip 展示完整多行文本 -->
+                <DataGridTemplateColumn Header="范围" Width="120" MinWidth="80">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Range}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Top"
+                                       FontFamily="Consolas, Courier New"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextPrimaryBrush}">
+                                <TextBlock.ToolTip>
+                                    <ToolTip Background="#1E293B" BorderBrush="#334155" BorderThickness="1">
+                                        <TextBlock Text="{Binding Range}"
+                                                   MaxWidth="500" TextWrapping="Wrap"
+                                                   Foreground="#E2E8F0" FontSize="12"/>
+                                    </ToolTip>
+                                </TextBlock.ToolTip>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="单位"   Binding="{Binding Unit,        Mode=OneWay}" Width="55"/>
                 <!-- 描述列：单元格内折行，悬停时 Tooltip 展示完整文本 -->
                 <DataGridTemplateColumn Header="描述" Width="2*" MinWidth="120">
