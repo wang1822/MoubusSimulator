@@ -161,6 +161,15 @@ public class MasterDbService : IMasterDbService
         await cmd.ExecuteNonQueryAsync();
     }
 
+    public async Task DeleteRegisterConfigAsync(int configId)
+    {
+        await using var conn = new SqlConnection(_cs);
+        await conn.OpenAsync();
+        await using var cmd = new SqlCommand("DELETE FROM MasterRegisterConfigs WHERE Id=@id", conn);
+        cmd.Parameters.AddWithValue("@id", configId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     // ────────────────────────────────────────────────────────────────────
     // 寄存器配置
     // ────────────────────────────────────────────────────────────────────

@@ -37,4 +37,7 @@ public interface IMasterDbService
     Task<Dictionary<int, bool>> GetIsVerifiedMapAsync(IEnumerable<int> configIds);
     /// <summary>清除该站点所有寄存器的绿点标记</summary>
     Task ClearAllIsVerifiedAsync(int stationId);
+
+    // ── 寄存器配置单行删除 ──
+    Task DeleteRegisterConfigAsync(int configId);
 }
