@@ -371,6 +371,9 @@
                                     <DataTemplate>
                                         <TextBlock Text="{Binding PhysicalValue}"
                                                    Padding="8,2" VerticalAlignment="Center"
+                                                   FontWeight="Bold"
+                                                   FontSize="15"
+                                                   Foreground="#60A5FA"
                                                    ToolTip="{Binding DisplayModeLabel}">
                                             <TextBlock.ContextMenu>
                                                 <ContextMenu DataContext="{Binding PlacementTarget.DataContext,
@@ -399,7 +402,23 @@
                             <DataGridTextColumn Header="取值范围"   Binding="{Binding ValueRange}"   Width="160"        IsReadOnly="True"/>
                             <DataGridTextColumn Header="比例系数"   Binding="{Binding ScaleFactor}"  Width="70"         IsReadOnly="True"/>
                             <DataGridTextColumn Header="更新时间"   Binding="{Binding LastUpdated}"  Width="*"          IsReadOnly="True"/>
-                        </DataGrid.Columns>
+                                                    <!-- 删除行按钮 -->
+                            <DataGridTemplateColumn Width="30" Header="" IsReadOnly="True">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="×"
+                                                Width="20" Height="18"
+                                                Padding="0" FontSize="12"
+                                                Foreground="#EF4444" Background="Transparent"
+                                                BorderThickness="0" Cursor="Hand"
+                                                ToolTip="删除此行"
+                                                Command="{Binding DataContext.DeleteRegisterRowCommand,
+                                                         RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+</DataGrid.Columns>
                     </DataGrid>
                 </TabItem>
 
@@ -480,7 +499,23 @@
                             <DataGridTextColumn Header="比例系数" Binding="{Binding ScaleFactor}"  Width="70"        IsReadOnly="True"/>
 
                             <DataGridTextColumn Header="更新时间" Binding="{Binding LastUpdated}" Width="*"/>
-                        </DataGrid.Columns>
+                                                    <!-- 删除行按钮 -->
+                            <DataGridTemplateColumn Width="30" Header="" IsReadOnly="True">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="×"
+                                                Width="20" Height="18"
+                                                Padding="0" FontSize="12"
+                                                Foreground="#EF4444" Background="Transparent"
+                                                BorderThickness="0" Cursor="Hand"
+                                                ToolTip="删除此行"
+                                                Command="{Binding DataContext.DeleteRegisterRowCommand,
+                                                         RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+</DataGrid.Columns>
                     </DataGrid>
                 </TabItem>
                 </TabControl>

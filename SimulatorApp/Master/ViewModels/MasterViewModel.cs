@@ -491,6 +491,22 @@ public partial class MasterViewModel : ObservableObject
     /// float/int32/uint32 → 2 个寄存器（高字在前，AB CD 字序）。
     /// int16/uint16       → 1 个寄存器。
     /// </summary>
+    [RelayCommand]
+    public async Task DeleteRegisterRowAsync(RegisterDisplayRow? row)
+    {
+        if (row == null) return;
+        if (!VerifyPassword()) return;
+        bool removed = TelemeterRows.Remove(row) || ControlRows.Remove(row);
+        if (!removed) return;
+        foreach (var pg in _pollGroups) pg.Rows.Remove(row);
+        _pollGroups.RemoveAll(pg => pg.Rows.Count == 0);
+        if (_dbService != null && row.RegisterConfigId > 0)
+        {
+            try   { await _dbService.DeleteRegisterConfigAsync(row.RegisterConfigId); }
+            catch (Exception ex) { AddLog(LogLevel.Warn, "DB delete failed: " + ex.Message); }
+        }
+    }
+
     private static ushort[] BuildWriteRegisters(RegisterDisplayRow row, double physVal)
     {
         double raw = (physVal - row.Offset) / row.ScaleFactor;
