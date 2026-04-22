@@ -184,9 +184,11 @@ public partial class SaveStationDialogViewModel : ObservableObject
     {
         var tsv = Clipboard.GetText();
         if (string.IsNullOrWhiteSpace(tsv)) return;
+        // 同时读取 HTML 格式，用于识别删除线行
+        var html = Clipboard.GetData(DataFormats.Html) as string;
         try
         {
-            var configs = MasterExcelHelper.ImportFromClipboard(tsv, category);
+            var configs = MasterExcelHelper.ImportFromClipboard(tsv, html, category);
             foreach (var cfg in configs)
                 target.Add(RegisterConfigEditRow.FromModel(cfg));
         }

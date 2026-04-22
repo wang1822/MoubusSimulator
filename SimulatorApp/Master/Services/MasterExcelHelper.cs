@@ -13,7 +13,7 @@ public static class MasterExcelHelper
 {
     /// <summary>
     /// 从 Excel 文件第一个 Sheet 导入主站寄存器配置列表。
-    /// 自动跳过表头行、段落标题行（首列非数字）和空行。
+    /// 自动跳过表头行、段落标题行（首列非数字）、空行和含删除线的行。
     /// </summary>
     /// <param name="filePath">Excel 文件路径</param>
     /// <param name="category">0=遥测 1=遥控</param>
@@ -39,17 +39,25 @@ public static class MasterExcelHelper
 
     /// <summary>
     /// 从剪贴板 TSV 文本解析（从 Excel 复制粘贴的格式相同）。
+    /// html 为 Clipboard.GetData(DataFormats.Html) 的原始内容，用于识别删除线行并跳过；
+    /// 传 null 时不做删除线过滤。
     /// </summary>
-    public static List<MasterRegisterConfig> ImportFromClipboard(string tsv, int category = 0)
+    public static List<MasterRegisterConfig> ImportFromClipboard(string tsv, string? html = null, int category = 0)
     {
+        var strikeRows = html != null ? StrikethroughRowIndices(html) : [];
+
         var list = new List<MasterRegisterConfig>();
+        int rowIdx = 0;
         foreach (var line in tsv.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
             var cols = line.Split('\t');
-            if (cols.Length < 2) continue;
-            if (!int.TryParse(cols[0].Trim(), out int startAddr)) continue;
-
-            list.Add(BuildConfig(cols, startAddr, category));
+            if (cols.Length >= 2
+                && int.TryParse(cols[0].Trim(), out int startAddr)
+                && !strikeRows.Contains(rowIdx))
+            {
+                list.Add(BuildConfig(cols, startAddr, category));
+            }
+            rowIdx++;
         }
         return list;
     }
@@ -65,6 +73,9 @@ public static class MasterExcelHelper
         {
             var addrStr = ws.Cell(row, 1).GetValue<string>().Trim();
             if (!int.TryParse(addrStr, out int startAddr)) continue; // 跳过标题/空行
+
+            // 跳过含删除线的行（检查地址列，删除线通常整行应用）
+            if (ws.Cell(row, 1).Style.Font.Strikethrough) continue;
 
             int.TryParse(ws.Cell(row, 2).GetValue<string>().Trim(), out int qty);
             if (qty <= 0) qty = 1;
@@ -94,6 +105,35 @@ public static class MasterExcelHelper
             });
         }
         return list;
+    }
+
+    /// <summary>
+    /// 解析 Excel HTML 剪贴板片段，返回含删除线的行索引集合（0-based，与 TSV 行序对应）。
+    /// 判断依据：行内任意单元格含 text-decoration:line-through 或 &lt;s&gt; 标签。
+    /// </summary>
+    private static HashSet<int> StrikethroughRowIndices(string html)
+    {
+        var result = new HashSet<int>();
+        int rowIdx = 0, pos = 0;
+        while (true)
+        {
+            int trStart = html.IndexOf("<tr", pos, StringComparison.OrdinalIgnoreCase);
+            if (trStart < 0) break;
+            int trEnd = html.IndexOf("</tr>", trStart, StringComparison.OrdinalIgnoreCase);
+            if (trEnd < 0) break;
+
+            var rowHtml = html.Substring(trStart, trEnd - trStart + 5);
+            if (rowHtml.IndexOf("line-through", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                rowHtml.IndexOf("<s>", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                rowHtml.IndexOf("<s ", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                result.Add(rowIdx);
+            }
+
+            rowIdx++;
+            pos = trEnd + 5;
+        }
+        return result;
     }
 
     private static MasterRegisterConfig BuildConfig(string[] cols, int startAddr, int category)
